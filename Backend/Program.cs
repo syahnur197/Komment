@@ -5,12 +5,18 @@ using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 // ponytail: .env -> env vars in a few lines. Swap in DotNetEnv if we ever need
 // quoting, escapes or multi-line values. Must run before CreateBuilder so the
 // default environment-variable config provider picks these up.
-foreach (var line in File.Exists(".env") ? File.ReadAllLines(".env") : [])
+// The file lives in the solution root; CWD is this project's directory under
+// `dotnet run`/AppHost, and in Docker there is no file at all — compose passes
+// the same keys as real environment variables.
+var envFile = new[] { ".env", "../.env" }.FirstOrDefault(File.Exists);
+
+foreach (var line in envFile is null ? [] : File.ReadAllLines(envFile))
 {
     var trimmed = line.Trim();
     if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
@@ -84,8 +90,20 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
 
 builder.Services.AddAuthorization();
 
+// The session cookie is encrypted with these keys, so a per-process keyring means
+// every restart signs everyone out. Only set in Docker — locally the default
+// (user profile) store already persists.
+if (builder.Configuration["DATAPROTECTION_KEYS"] is { Length: > 0 } keyPath)
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyPath));
+
 var app = builder.Build();
 services = app.Services;
+
+// ponytail: migrate on boot so a fresh volume is a working install. Fine for one
+// instance; two starting at once would race — move to a one-shot job if this ever
+// scales past a single container.
+using (var scope = app.Services.CreateScope())
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
 
 app.UseHttpsRedirection();
 app.UseCors();

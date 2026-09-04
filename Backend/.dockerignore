@@ -1,0 +1,7 @@
+bin/
+obj/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.env

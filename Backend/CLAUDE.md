@@ -68,8 +68,9 @@ client-side. Timestamps are set centrally by `AppDbContext.SaveChanges*` for any
 
 ## Conventions
 
-- `.env` is parsed by hand at the top of `Program.cs` *before* `CreateBuilder`;
-  real environment variables win over it. Secrets live there, not in
+- `.env` lives in the solution root (`../.env`) and is parsed by hand at the top
+  of `Program.cs` *before* `CreateBuilder`; real environment variables win over
+  it, which is how the Docker image gets its config. Secrets live there, not in
   `appsettings.json` (which holds only the SQLite connection string).
 - Authorization checks live inline in `HandleAsync` (author-or-site-owner for
   comment delete, owner-scoped queries for every site endpoint). Keep new

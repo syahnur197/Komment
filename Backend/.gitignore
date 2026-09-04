@@ -1,9 +1,6 @@
 # The repo root .gitignore already covers bin/, obj/, .idea/ and .env.
 # This file is for what is specific to this project.
 
-# Real secrets. .env.example is committed and stays committed.
-.env
-
 # Local SQLite database and its journal/WAL sidecars.
 *.db
 *.db-journal

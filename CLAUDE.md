@@ -24,6 +24,8 @@ dotnet run --project AppHost          # everything + Aspire dashboard (no `aspir
 dotnet run --project Backend          # API alone: https://localhost:7017
 dotnet run --project Dashboard        # frontend alone: https://localhost:7222 (needs Backend up)
 dotnet build                          # whole solution; also runs npm ci + vite build
+docker compose up --build             # both images; backend :8017, dashboard :8222
+docker compose -f docker-compose.prod.yml up -d --build   # behind the host's tunnel
 ```
 
 EF Core migrations are Backend-only and must run from that directory
@@ -60,9 +62,23 @@ surfaces API failures as messages rather than stack traces.
 (OpenTelemetry, health checks, resilient HTTP) is deliberately absent. Adding it
 means creating the project and calling it from both apps' `Program.cs`.
 
-**Backend loads `Backend/.env` relative to the working directory.** It works
-under both `dotnet run --project Backend` and AppHost because each launches with
-the project directory as CWD. Real environment variables win over `.env`.
+**Backend loads the solution-root `.env` relative to the working directory.**
+It looks for `.env` then `../.env`, so it works under `dotnet run --project
+Backend` and AppHost (project directory as CWD) and in Docker, where the file is
+absent and `docker-compose.yml` passes the same keys as real environment
+variables. Real environment variables win over `.env` either way.
+
+**Production is `docker-compose.prod.yml`, fronted by a Cloudflare Tunnel that
+lives on the server, not in this repo.** Both apps publish plain HTTP to
+`127.0.0.1` (backend `:8017`, dashboard `:8222`) and the host's `cloudflared`
+maps public hostnames onto those ports. Both run with
+`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` because the tunnel is a proxy — the
+Google `redirect_uri` and the `Secure` cookie both depend on
+`X-Forwarded-Proto`. Backend migrates its SQLite file on boot, and both apps
+persist data-protection keys to a volume when `DATAPROTECTION_KEYS` is set,
+without which a restart invalidates every cookie. The plain `docker-compose.yml`
+is the local-only version: no tunnel, so the `SameSite=None; Secure` session
+cookie will not stick in a browser.
 
 **`ponytail:` comments mark deliberate shortcuts with their upgrade path.**
 Respect them; do not "fix" them without a measured reason.

@@ -1,0 +1,29 @@
+# ponytail: no TLS terminator here. The API's session cookie is SameSite=None +
+# Secure, so a browser will not keep it over plain http — put a reverse proxy in
+# front (or add one as a third service) before this is anything but local.
+services:
+  backend:
+    build: ./Backend
+    env_file: .env
+    environment:
+      # The image's working directory is the app itself, so the SQLite file
+      # lives on its own volume instead.
+      ConnectionStrings__DefaultConnection: Data Source=/data/comments.db
+    volumes:
+      - backend-data:/data
+    ports:
+      - "8017:8080"
+
+  dashboard:
+    build: ./Dashboard
+    environment:
+      # What Aspire's .WithReference injects locally; service discovery resolves
+      # "https+http://backend" from it.
+      services__backend__http__0: http://backend:8080
+    ports:
+      - "8222:8080"
+    depends_on:
+      - backend
+
+volumes:
+  backend-data:

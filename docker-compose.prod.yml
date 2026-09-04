@@ -1,0 +1,51 @@
+# Production. Both apps bind plain HTTP to loopback; the host's cloudflared
+# picks them up from there.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Point the tunnel's public hostnames at these:
+#   <api-domain>   -> http://localhost:8017
+#   <admin-domain> -> http://localhost:8222
+# and register https://<api-domain>/signin-google as a Google redirect URI.
+services:
+  backend:
+    build: ./Backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # cloudflared forwards X-Forwarded-Proto: https and preserves the original
+      # Host, which is what the Google redirect_uri and the Secure cookie need.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      # ponytail: SQLite on a volume. One container only — swap the provider when
+      # a second one needs the same data.
+      ConnectionStrings__DefaultConnection: Data Source=/data/comments.db
+      # The session cookie is encrypted with these; losing them logs everyone out.
+      DATAPROTECTION_KEYS: /keys
+    volumes:
+      - backend-data:/data
+      - backend-keys:/keys
+    # Loopback only — this is unencrypted HTTP, and the tunnel is the only thing
+    # that should reach it.
+    ports:
+      - "127.0.0.1:8017:8080"
+
+  dashboard:
+    build: ./Dashboard
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      # Server-to-server inside the compose network — never out through the tunnel.
+      services__backend__http__0: http://backend:8080
+      # Survives restarts, so auth cookies do too.
+      DATAPROTECTION_KEYS: /keys
+    volumes:
+      - dashboard-keys:/keys
+    ports:
+      - "127.0.0.1:8222:8080"
+    depends_on:
+      - backend
+
+volumes:
+  backend-data:
+  backend-keys:
+  dashboard-keys:

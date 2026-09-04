@@ -2,6 +2,7 @@ using Dashboard;
 using Dashboard.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,12 @@ builder.Services.AddHttpClient(BackendSessionHandler.ClientName,
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false })
     .AddServiceDiscovery()
     .AddHttpMessageHandler<BackendSessionHandler>();
+
+// Without this the keys are per-process: every restart signs everyone out, and
+// two instances cannot read each other's cookies. Only set in Docker — locally
+// the default (user profile) store is already persistent.
+if (builder.Configuration["DATAPROTECTION_KEYS"] is { Length: > 0 } keyPath)
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyPath));
 
 var app = builder.Build();
 
