@@ -7,4 +7,18 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Remove="package.json;package-lock.json;vite.config.js;Styles\**;node_modules\**" />
+    <None Remove="node_modules\**" />
+  </ItemGroup>
+
+  <!-- Tailwind/Vite must emit wwwroot/dist before static assets are collected. -->
+  <Target Name="NpmInstall" Inputs="package-lock.json" Outputs="node_modules\.package-lock.json">
+    <Exec Command="npm ci" />
+  </Target>
+
+  <Target Name="ViteBuild" DependsOnTargets="NpmInstall" BeforeTargets="ResolveStaticWebAssetsInputs">
+    <Exec Command="npm run build" />
+  </Target>
+
 </Project>

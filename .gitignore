@@ -482,3 +482,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Dashboard frontend build (Vite + Tailwind)
+node_modules/
+Dashboard/wwwroot/dist/
