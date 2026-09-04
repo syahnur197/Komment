@@ -1,34 +1,50 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
+<div class="flex min-h-screen bg-slate-100">
+    @* Pure-CSS sidebar toggle: `peer` + `peer-checked:` replaces the template's
+       inline JS. Static on md and up, overlay below it. *@
+    <input type="checkbox" id="nav-toggle" class="peer sr-only" aria-label="Toggle navigation" />
+
+    <aside class="fixed inset-y-0 left-0 z-20 hidden w-60 shrink-0 border-r border-slate-200 bg-white peer-checked:block md:sticky md:top-0 md:block md:h-screen">
         <NavMenu />
-    </div>
+    </aside>
 
-    <main>
-        <div class="top-row flex items-center justify-end gap-4 px-4">
-            <AuthorizeView>
-                <Authorized>
-                    <span class="text-sm text-slate-600">@context.User.Identity!.Name</span>
-                    <form method="post" action="/logout">
-                        <AntiforgeryToken />
-                        <button type="submit" class="text-sm text-sky-700 hover:underline">Sign out</button>
-                    </form>
-                </Authorized>
-                <NotAuthorized>
-                    <a href="login" class="text-sm text-sky-700 hover:underline">Sign in</a>
-                </NotAuthorized>
-            </AuthorizeView>
-        </div>
+    <div class="flex min-w-0 flex-1 flex-col">
+        <header class="sticky top-0 z-10 flex h-14 items-center gap-4 border-b border-slate-200 bg-white px-4 md:px-6">
+            <label for="nav-toggle" class="cursor-pointer rounded p-1 text-slate-500 hover:bg-slate-100 md:hidden">
+                <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                <span class="sr-only">Menu</span>
+            </label>
 
-        <article class="content px-4">
+            <div class="ml-auto flex items-center gap-4">
+                <AuthorizeView>
+                    <Authorized>
+                        <span class="text-sm text-slate-600">@context.User.Identity!.Name</span>
+                        <form method="post" action="/logout">
+                            <AntiforgeryToken />
+                            <button type="submit" class="text-sm text-sky-700 hover:underline">Sign out</button>
+                        </form>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a href="login" class="text-sm text-sky-700 hover:underline">Sign in</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 md:p-6">
             @Body
-        </article>
-    </main>
+        </main>
+    </div>
 </div>
 
-<div id="blazor-error-ui" data-nosnippet>
+@* Blazor reveals this by setting inline `display: block`, which beats any class —
+   so it has to read correctly as a block, not a flex row. *@
+<div id="blazor-error-ui" data-nosnippet
+     class="fixed inset-x-0 bottom-0 z-50 hidden bg-amber-100 px-5 py-3 pr-10 text-sm text-amber-900 shadow-[0_-1px_2px_rgba(0,0,0,0.2)]">
     An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <a href="." class="reload ml-2 text-sky-800 underline">Reload</a>
+    <span class="dismiss absolute right-3 top-2 cursor-pointer">🗙</span>
 </div>

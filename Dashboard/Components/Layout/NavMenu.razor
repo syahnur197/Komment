@@ -1,16 +1,15 @@
-﻿<div class="top-row flex items-center pl-4">
-    <a class="navbar-brand text-white no-underline" href="">Dashboard</a>
+<div class="flex h-14 items-center border-b border-slate-200 px-4">
+    <a class="font-semibold text-slate-900 no-underline" href="">Komment</a>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="flex flex-col">
-        <div class="nav-item px-4">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
+@* Base colour is inherited from the nav, not set on the link: a class on the
+   link would beat ActiveClass or not depending on Tailwind's output order. *@
+<nav class="flex flex-col gap-1 p-3 text-slate-600">
+    <NavLink class="flex items-center gap-3 rounded px-3 py-2 text-sm no-underline hover:bg-slate-100 hover:text-slate-900"
+             ActiveClass="bg-sky-50 font-medium text-sky-800" href="" Match="NavLinkMatch.All">
+        <svg class="size-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10.5 12 3l9 7.5M5 9.5V20h14V9.5" />
+        </svg>
+        Home
+    </NavLink>
+</nav>
