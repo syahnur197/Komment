@@ -1,10 +1,34 @@
+using Dashboard;
 using Dashboard.Components;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(o =>
+    {
+        o.LoginPath = "/login";
+        o.AccessDeniedPath = "/login";
+        o.ExpireTimeSpan = TimeSpan.FromDays(30);
+        o.SlidingExpiration = true;
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
+
+// The Dashboard is a *client* of the API: it holds the backend's session cookie
+// server-side (as a claim on its own cookie) and replays it on every call.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<BackendSessionHandler>();
+builder.Services.AddServiceDiscovery();
+builder.Services.AddHttpClient(BackendSessionHandler.ClientName,
+        c => c.BaseAddress = new Uri("https+http://backend"))
+    .AddServiceDiscovery()
+    .AddHttpMessageHandler<BackendSessionHandler>();
 
 var app = builder.Build();
 
@@ -18,7 +42,19 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseAntiforgery();
+
+// ponytail: dropping our cookie is enough — the backend session it carried is
+// unreachable once the claim is gone. Call the API's /api/auth/logout too if
+// server-side revocation ever matters.
+app.MapPost("/logout", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/");
+});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

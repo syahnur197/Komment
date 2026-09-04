@@ -6,8 +6,19 @@
     </div>
 
     <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+        <div class="top-row flex items-center justify-end gap-4 px-4">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="text-sm text-slate-600">@context.User.Identity!.Name</span>
+                    <form method="post" action="/logout">
+                        <AntiforgeryToken />
+                        <button type="submit" class="text-sm text-sky-700 hover:underline">Sign out</button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="login" class="text-sm text-sky-700 hover:underline">Sign in</a>
+                </NotAuthorized>
+            </AuthorizeView>
         </div>
 
         <article class="content px-4">
