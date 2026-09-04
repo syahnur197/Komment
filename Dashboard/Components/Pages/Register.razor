@@ -2,7 +2,7 @@
 @layout BareLayout
 @using System.ComponentModel.DataAnnotations
 @using Dashboard
-@inject IHttpClientFactory HttpClientFactory
+@inherits ApiComponent
 @inject NavigationManager Nav
 
 <PageTitle>Create an admin account</PageTitle>
@@ -71,7 +71,6 @@
     // Static SSR, same as Login — no render mode.
     [SupplyParameterFromForm] private RegisterInput Input { get; set; } = default!;
 
-    private string? error;
     private bool closed;
 
     protected override void OnInitialized() => Input ??= new();
@@ -92,23 +91,13 @@
 
     private async Task RegisterAsync()
     {
-        try
-        {
-            await RegisterCoreAsync();
-        }
-        catch (HttpRequestException)
-        {
-            // The API is down or unreachable. Nothing the user typed is wrong, and
-            // a stack trace is not an answer.
-            error = "Cannot reach the Komment API. Please try again in a moment.";
-        }
+        await GuardAsync(RegisterCoreAsync);
     }
 
     private async Task RegisterCoreAsync()
     {
-        var api = HttpClientFactory.CreateClient(BackendSessionHandler.ClientName);
 
-        var response = await api.PostAsJsonAsync("/api/auth/register",
+        var response = await Api.PostAsJsonAsync("/api/auth/register",
             new { Input.Username, Input.Email, Input.Name, Input.Password });
 
         if (response.IsSuccessStatusCode)
@@ -130,10 +119,6 @@
 
         // Field-level failures (taken username, validator rejects) come back as
         // FastEndpoints' error response.
-        var problems = await response.Content.ReadFromJsonAsync<ApiErrors>();
-        error = problems?.Errors?.SelectMany(e => e.Value).FirstOrDefault()
-                ?? "Could not create the account. Please try again.";
+        error = await FirstErrorAsync(response) ?? "Could not create the account. Please try again.";
     }
-
-    private sealed record ApiErrors(Dictionary<string, string[]>? Errors);
 }

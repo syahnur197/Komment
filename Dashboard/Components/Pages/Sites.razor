@@ -1,0 +1,104 @@
+@page "/sites"
+@attribute [Authorize]
+@inherits ApiComponent
+
+<PageTitle>Sites</PageTitle>
+
+<div class="flex items-center justify-between">
+    <h1 class="text-2xl font-semibold text-slate-900">Sites</h1>
+    <a href="sites/new" class="rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white no-underline hover:bg-sky-800">
+        Add site
+    </a>
+</div>
+
+@if (error is not null)
+{
+    <p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
+}
+
+@if (sites is null)
+{
+    <p class="mt-4 text-slate-500">Loading…</p>
+}
+else if (sites.Count == 0)
+{
+    <div class="mt-6 rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+        <p class="text-slate-600">No sites yet.</p>
+        <p class="mt-1 text-sm text-slate-500">A site is one blog. Registering it also allows its origin through CORS.</p>
+    </div>
+}
+else
+{
+    <div class="mt-6 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table class="w-full text-left text-sm">
+            <thead class="border-b border-slate-200 text-slate-500">
+                <tr>
+                    <th class="px-4 py-3 font-medium">Name</th>
+                    <th class="px-4 py-3 font-medium">Slug</th>
+                    <th class="px-4 py-3 font-medium">Origins</th>
+                    <th class="px-4 py-3"><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var site in sites)
+                {
+                    <tr class="border-b border-slate-100 last:border-0">
+                        <td class="px-4 py-3 text-slate-900">@site.Name</td>
+                        <td class="px-4 py-3"><code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-700">@site.Slug</code></td>
+                        <td class="px-4 py-3 text-slate-600">
+                            @foreach (var origin in site.Origins)
+                            {
+                                <div>@origin</div>
+                            }
+                        </td>
+                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                            <a href="sites/@site.SiteId" class="text-sky-700 no-underline hover:underline">Edit</a>
+                            @* ponytail: native confirm() is the guard. Deleting a site cascades
+                               every comment on it, so if this ever needs to survive JS being off,
+                               promote it to a confirmation page. *@
+                            <EditForm Model="site" FormName="@($"delete-{site.SiteId}")"
+                                      OnValidSubmit="() => DeleteAsync(site.SiteId)" class="ml-3 inline">
+                                <button type="submit" class="text-red-600 hover:underline"
+                                        onclick="return confirm('Delete this site? Every comment on it is deleted too.')">
+                                    Delete
+                                </button>
+                            </EditForm>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<SiteResponse>? sites;
+
+    protected override async Task OnInitializedAsync() => await GuardAsync(LoadAsync);
+
+    private async Task LoadAsync()
+    {
+        var response = await Api.GetAsync("/api/site");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            error = "Could not load your sites.";
+            sites = [];
+            return;
+        }
+
+        sites = await response.Content.ReadFromJsonAsync<List<SiteResponse>>() ?? [];
+    }
+
+    private Task DeleteAsync(Guid id) => GuardAsync(async () =>
+    {
+        var response = await Api.DeleteAsync($"/api/site/{id}");
+
+        // 404 means it is already gone or was never yours — either way the list
+        // below is what matters, so just reload rather than arguing about it.
+        if (!response.IsSuccessStatusCode && response.StatusCode is not System.Net.HttpStatusCode.NotFound)
+            error = "Could not delete that site.";
+
+        await LoadAsync();
+    });
+}
