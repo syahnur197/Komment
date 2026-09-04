@@ -6,6 +6,8 @@ namespace Dashboard;
 // what talks to it. Login stashes the API's Set-Cookie value as a claim on the
 // Dashboard's own auth cookie; this puts it back on the wire per request, so
 // each signed-in user's calls carry that user's API session and no one else's.
+// This is only true because the client disables automatic cookie handling — see
+// ConfigurePrimaryHttpMessageHandler in Program.cs.
 public sealed class BackendSessionHandler(IHttpContextAccessor accessor) : DelegatingHandler
 {
     public const string ClientName = "backend";

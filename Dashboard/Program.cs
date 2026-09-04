@@ -27,6 +27,12 @@ builder.Services.AddTransient<BackendSessionHandler>();
 builder.Services.AddServiceDiscovery();
 builder.Services.AddHttpClient(BackendSessionHandler.ClientName,
         c => c.BaseAddress = new Uri("https+http://backend"))
+    // UseCookies defaults to true, and IHttpClientFactory pools one primary
+    // handler for every caller of this client — so its CookieContainer would
+    // collect each user's API session and replay the most recent one for
+    // everybody. The session must come only from BackendSessionHandler, which
+    // reads it per request off the signed-in user.
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false })
     .AddServiceDiscovery()
     .AddHttpMessageHandler<BackendSessionHandler>();
 
