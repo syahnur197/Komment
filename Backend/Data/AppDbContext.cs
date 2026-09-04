@@ -31,7 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder b)
     {
-        // SQLite treats NULLs as distinct, so these stay unique without a
+        // Postgres treats NULLs as distinct, so these stay unique without a
         // filter even though most rows have one of the two set and not the other.
         b.Entity<User>().HasIndex(u => u.GoogleId).IsUnique();
         b.Entity<User>().HasIndex(u => u.Username).IsUnique();

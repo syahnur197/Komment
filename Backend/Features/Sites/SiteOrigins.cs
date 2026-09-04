@@ -9,8 +9,8 @@ namespace Backend.Features.Sites;
 // redeploy.
 public static class SiteOrigins
 {
-    // ponytail: reads every site per CORS preflight. A handful of rows in local
-    // SQLite; wrap in IMemoryCache if this ever shows up in a profile.
+    // ponytail: reads every site per CORS preflight. A handful of rows;
+    // wrap in IMemoryCache if this ever shows up in a profile.
     public static bool IsAllowed(IServiceProvider services, string origin)
     {
         using var scope = services.CreateScope();

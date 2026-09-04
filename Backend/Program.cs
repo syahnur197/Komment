@@ -35,7 +35,7 @@ builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("comments")));
 
 // Blogs are static sites on other origins, so the session cookie is cross-site:
 // SameSite=None + Secure, and CORS must allow credentials. The allowed origins

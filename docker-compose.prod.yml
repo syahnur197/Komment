@@ -8,6 +8,23 @@
 #   <admin-domain> -> http://localhost:8222
 # and register https://<api-domain>/signin-google as a Google redirect URI.
 services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: comments
+      POSTGRES_USER: komment
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      # PG18 puts PGDATA under /var/lib/postgresql/<major>/docker and declares
+      # /var/lib/postgresql as the volume — mounting .../data persists nothing.
+      - postgres-data:/var/lib/postgresql
+    # Backend migrates on boot, so it must not start against a half-open server.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U komment -d comments"]
+      interval: 5s
+      retries: 10
+
   backend:
     build: ./Backend
     restart: unless-stopped
@@ -16,18 +33,18 @@ services:
       # cloudflared forwards X-Forwarded-Proto: https and preserves the original
       # Host, which is what the Google redirect_uri and the Secure cookie need.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
-      # ponytail: SQLite on a volume. One container only — swap the provider when
-      # a second one needs the same data.
-      ConnectionStrings__DefaultConnection: Data Source=/data/comments.db
+      ConnectionStrings__comments: Host=postgres;Database=comments;Username=komment;Password=${POSTGRES_PASSWORD}
       # The session cookie is encrypted with these; losing them logs everyone out.
       DATAPROTECTION_KEYS: /keys
     volumes:
-      - backend-data:/data
       - backend-keys:/keys
     # Loopback only — this is unencrypted HTTP, and the tunnel is the only thing
     # that should reach it.
     ports:
       - "127.0.0.1:8017:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   dashboard:
     build: ./Dashboard
@@ -46,6 +63,6 @@ services:
       - backend
 
 volumes:
-  backend-data:
+  postgres-data:
   backend-keys:
   dashboard-keys:

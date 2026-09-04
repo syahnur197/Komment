@@ -1,6 +1,15 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var backend = builder.AddProject<Projects.Backend>("backend");
+var db = builder.AddPostgres("postgres")
+    // Without this the data is gone every time the AppHost stops.
+    .WithDataVolume()
+    .AddDatabase("comments");
+
+var backend = builder.AddProject<Projects.Backend>("backend")
+    // Injects ConnectionStrings__comments; Backend reads it with plain
+    // GetConnectionString, no Aspire client integration.
+    .WithReference(db)
+    .WaitFor(db);
 
 // ponytail: plain executable, not AddViteApp — `npm run dev` is a watch build,
 // not a dev server, so there is no endpoint for Aspire to model or health-check.

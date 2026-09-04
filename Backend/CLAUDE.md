@@ -18,11 +18,12 @@ the fast path; `aspire run` is for when you want both apps and the dashboard.
 ## Commands
 
 ```bash
-dotnet run                                  # https://localhost:7017 + http://localhost:5147
+dotnet run                                  # https://localhost:7017 + http://localhost:5147 (needs a local Postgres)
+dotnet run --project ../AppHost             # easier: starts Postgres in a container for you
 aspire run                                  # from ../AppHost: this API + Dashboard + Aspire dashboard
 dotnet build
 dotnet ef migrations add <Name>             # after any entity/DbContext change
-dotnet ef database update
+dotnet ef database update                   # or just start the app — it migrates on boot
 ```
 
 Swagger UI is at `/swagger` in Development only. There is no test project yet.
@@ -71,7 +72,8 @@ client-side. Timestamps are set centrally by `AppDbContext.SaveChanges*` for any
 - `.env` lives in the solution root (`../.env`) and is parsed by hand at the top
   of `Program.cs` *before* `CreateBuilder`; real environment variables win over
   it, which is how the Docker image gets its config. Secrets live there, not in
-  `appsettings.json` (which holds only the SQLite connection string).
+  `appsettings.json` (which holds only a localhost Postgres fallback — AppHost
+  and compose both override `ConnectionStrings:comments`).
 - Authorization checks live inline in `HandleAsync` (author-or-site-owner for
   comment delete, owner-scoped queries for every site endpoint). Keep new
   endpoints scoped the same way — admin does not mean cross-tenant.

@@ -37,7 +37,7 @@
             <div>
                 <label for="name" class="block text-sm font-medium text-slate-700">Name</label>
                 <InputText id="name" @bind-Value="Input.Name"
-                           class="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-sky-600 focus:outline-none" />
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
                 <ValidationMessage For="() => Input.Name" class="mt-1 block text-sm text-red-600" />
             </div>
 
@@ -46,14 +46,14 @@
                 @if (IsNew)
                 {
                     <InputText id="slug" @bind-Value="Input.Slug"
-                               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 font-mono focus:border-sky-600 focus:outline-none" />
+                               class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm font-mono focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
                     <ValidationMessage For="() => Input.Slug" class="mt-1 block text-sm text-red-600" />
                     <p class="mt-1 text-sm text-slate-500">How the blog identifies itself. Lowercase letters, digits and dashes.</p>
                 }
                 else
                 {
                     @* The API refuses slug edits: blogs already embed it in their requests. *@
-                    <p class="mt-1 rounded bg-slate-100 px-3 py-2 font-mono text-slate-600">@Input.Slug</p>
+                    <p class="mt-1 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-slate-500">@Input.Slug</p>
                     <p class="mt-1 text-sm text-slate-500">The slug cannot change — blogs already send it.</p>
                 }
             </div>
@@ -61,7 +61,7 @@
             <div>
                 <label for="origins" class="block text-sm font-medium text-slate-700">Origins</label>
                 <InputTextArea id="origins" @bind-Value="Input.Origins" rows="3"
-                               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm focus:border-sky-600 focus:outline-none" />
+                               class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm font-mono text-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
                 <ValidationMessage For="() => Input.Origins" class="mt-1 block text-sm text-red-600" />
                 <p class="mt-1 text-sm text-slate-500">
                     One per line. Scheme, host and port only — no trailing slash. This is the CORS allowlist.

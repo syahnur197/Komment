@@ -31,6 +31,13 @@ docker compose -f docker-compose.prod.yml up -d --build   # behind the host's tu
 EF Core migrations are Backend-only and must run from that directory
 (`cd Backend && dotnet ef migrations add <Name>`). There is no test project.
 
+Postgres comes from whichever host is running: `AddPostgres("postgres")` in
+AppHost starts a container and injects `ConnectionStrings__comments`; the compose
+files build the same connection string from `POSTGRES_PASSWORD`. Backend reads it
+with plain `GetConnectionString("comments")` and no Aspire client integration, so
+`dotnet run --project Backend` alone falls back to the localhost default in
+`appsettings.json`.
+
 CSS is built by MSBuild — `Dashboard.csproj` runs `npm ci` then `npm run build`
 before static assets are collected, so `dotnet build` alone is enough. Under
 AppHost, `npm run dev` (a `vite build --watch`, not a dev server) runs as a
@@ -74,9 +81,10 @@ lives on the server, not in this repo.** Both apps publish plain HTTP to
 maps public hostnames onto those ports. Both run with
 `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` because the tunnel is a proxy — the
 Google `redirect_uri` and the `Secure` cookie both depend on
-`X-Forwarded-Proto`. Backend migrates its SQLite file on boot, and both apps
-persist data-protection keys to a volume when `DATAPROTECTION_KEYS` is set,
-without which a restart invalidates every cookie. The plain `docker-compose.yml`
+`X-Forwarded-Proto`. Postgres runs as a third service with its own volume,
+Backend migrates on boot behind a `service_healthy` gate, and both apps persist
+data-protection keys to a volume when `DATAPROTECTION_KEYS` is set, without
+which a restart invalidates every cookie. The plain `docker-compose.yml`
 is the local-only version: no tunnel, so the `SameSite=None; Secure` session
 cookie will not stick in a browser.
 
