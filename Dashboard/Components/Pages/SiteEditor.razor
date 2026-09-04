@@ -1,0 +1,155 @@
+@page "/sites/new"
+@page "/sites/{Id:guid}"
+@attribute [Authorize]
+@inherits ApiComponent
+@using System.ComponentModel.DataAnnotations
+@inject NavigationManager Nav
+
+<PageTitle>@(IsNew ? "Add site" : "Edit site")</PageTitle>
+
+<div class="max-w-xl">
+    <h1 class="text-2xl font-semibold text-slate-900">@(IsNew ? "Add site" : "Edit site")</h1>
+
+    @if (error is not null)
+    {
+        <p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
+    }
+
+    @if (notFound)
+    {
+        <p class="mt-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">That site does not exist.</p>
+        <a href="sites" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sites</a>
+    }
+    else if (Input is null)
+    {
+        @* No form to fall back to, so say nothing more than the banner above. *@
+        @if (error is null)
+        {
+            <p class="mt-4 text-slate-500">Loading…</p>
+        }
+        <a href="sites" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sites</a>
+    }
+    else
+    {
+        <EditForm Model="Input" OnValidSubmit="SubmitAsync" FormName="site" class="mt-6 space-y-4">
+            <DataAnnotationsValidator />
+
+            <div>
+                <label for="name" class="block text-sm font-medium text-slate-700">Name</label>
+                <InputText id="name" @bind-Value="Input.Name"
+                           class="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-sky-600 focus:outline-none" />
+                <ValidationMessage For="() => Input.Name" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <div>
+                <label for="slug" class="block text-sm font-medium text-slate-700">Slug</label>
+                @if (IsNew)
+                {
+                    <InputText id="slug" @bind-Value="Input.Slug"
+                               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 font-mono focus:border-sky-600 focus:outline-none" />
+                    <ValidationMessage For="() => Input.Slug" class="mt-1 block text-sm text-red-600" />
+                    <p class="mt-1 text-sm text-slate-500">How the blog identifies itself. Lowercase letters, digits and dashes.</p>
+                }
+                else
+                {
+                    @* The API refuses slug edits: blogs already embed it in their requests. *@
+                    <p class="mt-1 rounded bg-slate-100 px-3 py-2 font-mono text-slate-600">@Input.Slug</p>
+                    <p class="mt-1 text-sm text-slate-500">The slug cannot change — blogs already send it.</p>
+                }
+            </div>
+
+            <div>
+                <label for="origins" class="block text-sm font-medium text-slate-700">Origins</label>
+                <InputTextArea id="origins" @bind-Value="Input.Origins" rows="3"
+                               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm focus:border-sky-600 focus:outline-none" />
+                <ValidationMessage For="() => Input.Origins" class="mt-1 block text-sm text-red-600" />
+                <p class="mt-1 text-sm text-slate-500">
+                    One per line. Scheme, host and port only — no trailing slash. This is the CORS allowlist.
+                </p>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button type="submit" class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800">
+                    @(IsNew ? "Add site" : "Save changes")
+                </button>
+                <a href="sites" class="text-sm text-sky-700 no-underline hover:underline">Cancel</a>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [SupplyParameterFromForm] private SiteInput? Input { get; set; }
+
+    private bool notFound;
+    private bool IsNew => Id is null;
+
+    private sealed class SiteInput
+    {
+        [Required, StringLength(200)] public string Name { get; set; } = "";
+
+        [Required]
+        [StringLength(100)]
+        [RegularExpression("^[a-z0-9-]+$", ErrorMessage = "Lowercase letters, digits and dashes only.")]
+        public string Slug { get; set; } = "";
+
+        [Required, StringLength(1000)] public string Origins { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A form post already carries Input; only a fresh GET needs loading.
+        if (Input is not null) return;
+
+        if (IsNew)
+        {
+            Input = new();
+            return;
+        }
+
+        await GuardAsync(async () =>
+        {
+            var response = await Api.GetAsync($"/api/site/{Id}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                notFound = true;
+                return;
+            }
+
+            var site = await response.Content.ReadFromJsonAsync<SiteResponse>();
+            Input = new()
+            {
+                Name = site!.Name,
+                Slug = site.Slug,
+                Origins = string.Join('\n', site.Origins),
+            };
+        });
+    }
+
+    private Task SubmitAsync() => GuardAsync(async () =>
+    {
+        // The textarea is one origin per line; the API takes them comma-separated.
+        var origins = string.Join(',', Input!.Origins
+            .Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var response = IsNew
+            ? await Api.PostAsJsonAsync("/api/site", new { Input.Slug, Input.Name, Origins = origins })
+            : await Api.PatchAsJsonAsync($"/api/site/{Id}", new { Input.Name, Origins = origins });
+
+        if (response.IsSuccessStatusCode)
+        {
+            Nav.NavigateTo("/sites");
+            return;
+        }
+
+        if (response.StatusCode is System.Net.HttpStatusCode.NotFound)
+        {
+            notFound = true;
+            return;
+        }
+
+        error = await FirstErrorAsync(response) ?? "Could not save the site.";
+    });
+}

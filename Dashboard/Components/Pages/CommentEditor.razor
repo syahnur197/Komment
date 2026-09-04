@@ -1,0 +1,148 @@
+@page "/sites/{SiteId:guid}/comments/{Id:guid}"
+@attribute [Authorize]
+@inherits ApiComponent
+@using System.ComponentModel.DataAnnotations
+@inject NavigationManager Nav
+
+<PageTitle>@Title</PageTitle>
+
+<div class="max-w-2xl">
+    <a href="sites/@SiteId/comments" class="text-sm text-sky-700 no-underline hover:underline">Comments</a>
+    <h1 class="text-2xl font-semibold text-slate-900">@Title</h1>
+
+    @if (error is not null)
+    {
+        <p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
+    }
+
+    @if (blocked is not null)
+    {
+        <p class="mt-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">@blocked</p>
+        <a href="sites/@SiteId/comments" class="mt-4 block text-sm text-sky-700 hover:underline">Back to comments</a>
+    }
+    else if (Input is null)
+    {
+        @if (error is null)
+        {
+            <p class="mt-4 text-slate-500">Loading…</p>
+        }
+        <a href="sites/@SiteId/comments" class="mt-4 block text-sm text-sky-700 hover:underline">Back to comments</a>
+    }
+    else
+    {
+        @if (target is not null)
+        {
+            <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                <p class="font-mono text-xs text-slate-500">@target.PostSlug</p>
+                <p class="mt-1 text-sm font-medium text-slate-900">@target.AuthorName</p>
+                <p class="mt-1 whitespace-pre-wrap text-sm text-slate-600">@target.Body</p>
+            </div>
+        }
+
+        <EditForm Model="Input" OnValidSubmit="SubmitAsync" FormName="comment" class="mt-4 space-y-4">
+            <DataAnnotationsValidator />
+
+            <div>
+                <label for="body" class="block text-sm font-medium text-slate-700">
+                    @(Reply ? "Your reply" : "Comment")
+                </label>
+                <InputTextArea id="body" @bind-Value="Input.Body" rows="6"
+                               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-sky-600 focus:outline-none" />
+                <ValidationMessage For="() => Input.Body" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button type="submit" class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800">
+                    @(Reply ? "Post reply" : "Save changes")
+                </button>
+                <a href="sites/@SiteId/comments" class="text-sm text-sky-700 no-underline hover:underline">Cancel</a>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid SiteId { get; set; }
+    [Parameter] public Guid Id { get; set; }
+
+    // One route, two jobs: edit this comment, or reply to it. A query flag keeps
+    // it to a single component rather than two near-identical pages.
+    [SupplyParameterFromQuery] public bool Reply { get; set; }
+
+    [SupplyParameterFromForm] private BodyInput? Input { get; set; }
+
+    private CommentResponse? target;
+    private string? siteSlug;
+    private string? blocked;
+
+    private string Title => Reply ? "Reply" : "Edit comment";
+
+    private sealed class BodyInput
+    {
+        [Required, StringLength(4000)] public string Body { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync() => await GuardAsync(LoadAsync);
+
+    private async Task LoadAsync()
+    {
+        // Owner-scoped, so it doubles as the check that this site is yours.
+        var siteResponse = await Api.GetAsync($"/api/site/{SiteId}");
+
+        if (!siteResponse.IsSuccessStatusCode)
+        {
+            blocked = "That site does not exist.";
+            return;
+        }
+
+        siteSlug = (await siteResponse.Content.ReadFromJsonAsync<SiteResponse>())!.Slug;
+
+        var response = await Api.GetAsync($"/api/comment/{Id}");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            blocked = "That comment does not exist.";
+            return;
+        }
+
+        target = await response.Content.ReadFromJsonAsync<CommentResponse>();
+
+        // Editing is author-only at the API. Saying so here beats a 403 after typing.
+        if (!Reply && target!.UserId != await CurrentUserIdAsync())
+        {
+            blocked = "You can only edit your own comments. You can still delete this one from the comments list.";
+            return;
+        }
+
+        // A form post already carries what was typed; don't overwrite it.
+        Input ??= new() { Body = Reply ? "" : target!.Body };
+    }
+
+    private Task SubmitAsync() => GuardAsync(async () =>
+    {
+        // The form post re-ran OnInitializedAsync, so target/siteSlug are loaded.
+        var response = Reply
+            ? await Api.PostAsJsonAsync("/api/comment", new
+            {
+                Site = siteSlug,
+                target!.PostSlug,
+                Input!.Body,
+                ParentCommentId = Id,
+            })
+            : await Api.PatchAsJsonAsync($"/api/comment/{Id}", new { Input!.Body });
+
+        if (response.IsSuccessStatusCode)
+        {
+            Nav.NavigateTo($"/sites/{SiteId}/comments");
+            return;
+        }
+
+        if (response.StatusCode is System.Net.HttpStatusCode.Forbidden)
+        {
+            blocked = "You can only edit your own comments.";
+            return;
+        }
+
+        error = await FirstErrorAsync(response) ?? "Could not save the comment.";
+    });
+}

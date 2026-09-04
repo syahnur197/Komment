@@ -5,7 +5,7 @@
 @using Dashboard
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
-@inject IHttpClientFactory HttpClientFactory
+@inherits ApiComponent
 @inject NavigationManager Nav
 
 <PageTitle>Sign in</PageTitle>
@@ -51,8 +51,6 @@
     [SupplyParameterFromForm] private LoginInput Input { get; set; } = default!;
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
 
-    private string? error;
-
     protected override void OnInitialized() => Input ??= new();
 
     private sealed class LoginInput
@@ -63,23 +61,13 @@
 
     private async Task SignInAsync()
     {
-        try
-        {
-            await SignInCoreAsync();
-        }
-        catch (HttpRequestException)
-        {
-            // The API is down or unreachable. Nothing the user typed is wrong, and
-            // a stack trace is not an answer.
-            error = "Cannot reach the Komment API. Please try again in a moment.";
-        }
+        await GuardAsync(SignInCoreAsync);
     }
 
     private async Task SignInCoreAsync()
     {
-        var api = HttpClientFactory.CreateClient(BackendSessionHandler.ClientName);
 
-        var login = await api.PostAsJsonAsync("/api/auth/login/password",
+        var login = await Api.PostAsJsonAsync("/api/auth/login/password",
             new { Input.Username, Input.Password });
 
         if (!login.IsSuccessStatusCode)
@@ -104,7 +92,7 @@
 
         // The API signs in readers and admins through the same endpoint. This is
         // the admin console, so an ordinary reader account is not enough.
-        var me = await api.SendAsync(WithSession(new HttpRequestMessage(HttpMethod.Get, "/api/auth/me"), session));
+        var me = await Api.SendAsync(WithSession(new HttpRequestMessage(HttpMethod.Get, "/api/auth/me"), session));
         if (!me.IsSuccessStatusCode || await me.Content.ReadFromJsonAsync<Me>() is not { IsSiteAdmin: true } admin)
         {
             error = "This account cannot manage sites.";
