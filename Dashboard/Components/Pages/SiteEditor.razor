@@ -3,46 +3,51 @@
 
 <PageTitle>@(Id is null ? "Add site" : "Edit site")</PageTitle>
 
-@* The route parameter is the only thing the server contributes: it hands the id
-   to the browser through data-site-id and stops there. *@
-<div data-page="site-editor" data-site-id="@Id" class="max-w-xl">
+@* The route parameter is the only thing the server contributes: it is handed to
+   the Alpine component as an argument and the server does nothing else. *@
+<div x-data="siteEditor('@Id')" x-cloak class="max-w-xl">
     <h1 class="text-2xl font-semibold text-slate-900">@(Id is null ? "Add site" : "Edit site")</h1>
 
-    <p data-error hidden class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"></p>
+    <p x-show="error" x-text="error" role="alert"
+       class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
 
-    <div data-not-found hidden>
+    <div x-show="notFound">
         <p class="mt-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">That site does not exist.</p>
         <a href="/sites" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sites</a>
     </div>
 
-    <p data-status class="mt-4 text-slate-500">Loading…</p>
+    <p x-show="loading" class="mt-4 text-slate-500">Loading…</p>
 
-    <form data-site-form hidden class="mt-6 space-y-4" novalidate>
+    <form x-show="!loading && !notFound" x-on:submit.prevent="submit" class="mt-6 space-y-4">
         <div>
             <label for="name" class="block text-sm font-medium text-slate-700">Name</label>
-            <input id="name" name="name" required maxlength="200"
+            <input id="name" x-model="form.name" required maxlength="200"
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
         <div>
             <label for="slug" class="block text-sm font-medium text-slate-700">Slug</label>
-            @if (Id is null)
-            {
-                <input id="slug" name="slug" maxlength="100" pattern="[a-z0-9\-]+"
-                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 font-mono shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-                <p class="mt-1 text-sm text-slate-500">How the blog identifies itself. Lowercase letters, digits and dashes.</p>
-            }
-            else
-            {
-                @* The API refuses slug edits: blogs already embed it in their requests. *@
-                <p data-slug-display class="mt-1 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-slate-500"></p>
-                <p class="mt-1 text-sm text-slate-500">The slug cannot change — blogs already send it.</p>
-            }
+
+            <template x-if="isNew">
+                <div>
+                    <input id="slug" x-model="form.slug" required maxlength="100" pattern="[a-z0-9\-]+"
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 font-mono shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                    <p class="mt-1 text-sm text-slate-500">How the blog identifies itself. Lowercase letters, digits and dashes.</p>
+                </div>
+            </template>
+
+            @* The API refuses slug edits: blogs already embed it in their requests. *@
+            <template x-if="!isNew">
+                <div>
+                    <p class="mt-1 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-slate-500" x-text="form.slug"></p>
+                    <p class="mt-1 text-sm text-slate-500">The slug cannot change — blogs already send it.</p>
+                </div>
+            </template>
         </div>
 
         <div>
             <label for="origins" class="block text-sm font-medium text-slate-700">Origins</label>
-            <textarea id="origins" name="origins" rows="3" required maxlength="1000"
+            <textarea id="origins" x-model="form.origins" rows="3" required maxlength="1000"
                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 font-mono text-sm shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none"></textarea>
             <p class="mt-1 text-sm text-slate-500">
                 One per line. Scheme, host and port only — no trailing slash. This is the CORS allowlist.
@@ -50,14 +55,87 @@
         </div>
 
         <div class="flex items-center gap-3">
-            <button type="submit" class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
-                @(Id is null ? "Add site" : "Save changes")
-            </button>
+            <button type="submit" :disabled="busy"
+                    x-text="busy ? 'Saving…' : (isNew ? 'Add site' : 'Save changes')"
+                    class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60"></button>
             <a href="/sites" class="text-sm text-sky-700 no-underline hover:underline">Cancel</a>
         </div>
     </form>
 </div>
 
-@code {
-    [Parameter] public Guid? Id { get; set; }
-}
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('siteEditor', (id) => ({
+            id: id || null,
+            form: { name: '', slug: '', origins: '' },
+            error: '',
+            notFound: false,
+            loading: true,
+            busy: false,
+
+            get isNew() {
+                return this.id === null;
+            },
+
+            init() {
+                if (!this.$store.auth.requireAdmin()) return;
+
+                if (this.isNew) {
+                    this.loading = false;
+                    return;
+                }
+
+                this.load();
+            },
+
+            async load() {
+                try {
+                    const site = await this.$api.get(`/api/site/${this.id}`, 'Could not load that site.');
+
+                    // The textarea is one origin per line; the API stores them
+                    // comma-separated and hands them back as an array.
+                    this.form = { name: site.name, slug: site.slug, origins: site.origins.join('\n') };
+                } catch (failure) {
+                    // An unreachable API is not the same answer as "no such site".
+                    if (this.$api.offline(failure)) this.error = failure.message;
+                    else this.notFound = true;
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async submit() {
+                this.error = '';
+                this.busy = true;
+
+                const origins = this.form.origins
+                    .split(/[\n\r,]+/)
+                    .map((origin) => origin.trim())
+                    .filter(Boolean)
+                    .join(',');
+
+                try {
+                    const response = this.isNew
+                        ? await this.$api.post('/api/site', { slug: this.form.slug, name: this.form.name, origins })
+                        : await this.$api.patch(`/api/site/${this.id}`, { name: this.form.name, origins });
+
+                    if (response.ok) {
+                        location.assign('/sites');
+                        return;
+                    }
+
+                    if (response.status === 404) {
+                        this.notFound = true;
+                        return;
+                    }
+
+                    this.error = await this.$api.error(response, 'Could not save the site.');
+                } catch (failure) {
+                    this.error = this.$api.message(failure, 'Could not save the site.');
+                } finally {
+                    this.busy = false;
+                }
+            },
+        }));
+    });
+</script>

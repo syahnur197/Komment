@@ -3,31 +3,77 @@
 
 <PageTitle>Sign in</PageTitle>
 
-@* Static SSR shell. The browser calls the API itself now, so nothing here is
-   filled in by the server — Styles/js/pages/login.js owns the behaviour. *@
-<div data-page="login" class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+<div x-data="login" x-cloak class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
     <h1 class="text-xl font-semibold text-slate-900">Sign in</h1>
     <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
 
-    <form data-login-form class="mt-6 space-y-4" novalidate>
-        <p data-error hidden class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"></p>
+    <form x-on:submit.prevent="submit" class="mt-6 space-y-4">
+        <p x-show="error" x-text="error" role="alert"
+           class="rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
 
         <div>
             <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
-            <input id="username" name="username" required autocomplete="username" autofocus
+            <input id="username" x-model="form.username" required autocomplete="username" autofocus
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
         <div>
             <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
-            <input id="password" name="password" type="password" required autocomplete="current-password"
+            <input id="password" type="password" x-model="form.password" required autocomplete="current-password"
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
-        <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
-            Sign in
-        </button>
+        <button type="submit" :disabled="busy" x-text="busy ? 'Signing in…' : 'Sign in'"
+                class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60"></button>
     </form>
 
     <a href="/register" class="mt-4 block text-sm text-sky-700 hover:underline">Create an admin account</a>
 </div>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('login', () => ({
+            form: { username: '', password: '' },
+            error: '',
+            busy: false,
+
+            async submit() {
+                this.error = '';
+                this.busy = true;
+
+                try {
+                    const response = await this.$api.post('/api/auth/token', this.form);
+
+                    if (!response.ok) {
+                        // The API is deliberately vague to avoid an account-enumeration
+                        // oracle; saying more here would give the same thing away.
+                        this.error = 'Invalid username or password.';
+                        return;
+                    }
+
+                    const account = await response.json();
+
+                    // The API signs in readers and admins through the same endpoint.
+                    // This is the admin console, so a reader account is not enough.
+                    if (!account.isSiteAdmin) {
+                        this.error = 'This account cannot manage sites.';
+                        return;
+                    }
+
+                    this.$store.auth.signIn(account);
+
+                    // Only ever bounce back inside this app — returnUrl comes from
+                    // the query string, so an absolute URL would be an open redirect.
+                    const wanted = new URLSearchParams(location.search).get('returnUrl');
+                    const safe = wanted && wanted.startsWith('/') && !wanted.startsWith('//');
+
+                    location.assign(safe ? wanted : '/');
+                } catch (failure) {
+                    this.error = this.$api.message(failure, 'Sign-in failed. Please try again.');
+                } finally {
+                    this.busy = false;
+                }
+            },
+        }));
+    });
+</script>

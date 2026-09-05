@@ -9,7 +9,7 @@ A .NET 10 solution (`Komment.slnx`). Three projects, orchestrated by Aspire:
 | Project | What it is |
 |---|---|
 | `Backend/` | The real app — a self-hostable comment backend for static blogs. **Has its own `CLAUDE.md`; read it before touching anything in there.** |
-| `Dashboard/` | The admin console for `Backend`. Blazor renders static HTML shells; the browser calls the API. Tailwind v4 + browser JS via Vite. |
+| `Dashboard/` | The admin console for `Backend`. Blazor renders static HTML shells; Alpine.js calls the API from the browser. Tailwind v4 via Vite. |
 | `AppHost/` | Aspire 13 orchestrator (`Aspire.AppHost.Sdk/13.5.3`). Single-file `AppHost.cs`, no ServiceDefaults project. |
 
 ## Commands
@@ -33,8 +33,8 @@ with plain `GetConnectionString("comments")` and no Aspire client integration, s
 `dotnet run --project Backend` alone falls back to the localhost default in
 `appsettings.json`.
 
-CSS **and the Dashboard's JavaScript** are built by MSBuild — `Dashboard.csproj`
-runs `npm ci` then `npm run build` before static assets are collected, so
+CSS **and the Alpine bundle** are built by MSBuild — `Dashboard.csproj` runs
+`npm ci` then `npm run build` before static assets are collected, so
 `dotnet build` alone is enough. Under AppHost, `npm run dev` (a
 `vite build --watch`, not a dev server) runs as a plain executable resource; a
 browser refresh picks up a rebuild.
@@ -47,11 +47,12 @@ always; `docker-compose.prod.yml` also needs `BACKEND_PUBLIC_URL`. See
 
 **The Dashboard is a browser client of the API, exactly like a blog is.** Its
 server renders static HTML shells and nothing else — no `HttpClient`, no session,
-no idea who is signed in. Everything that touches the API lives in
-`Dashboard/Styles/js/`, and the admin's credential is a bearer token in their own
-browser's `localStorage`. The one thing the server still tells the browser is
-where the API is: `ApiBaseUrl` resolves it and `App.razor` writes it into
-`<meta name="komment-api">`.
+no idea who is signed in. Everything that touches the API is Alpine.js written
+**inline in the `.razor` file it drives**; `Styles/main.js` is the only `.js`
+file and does nothing but import the stylesheet and start Alpine. The admin's
+credential is a bearer token in their own browser's `localStorage`. The one thing
+the server still tells the browser is where the API is: `ApiBaseUrl` resolves it
+and `App.razor` writes it into `<meta name="komment-api">`.
 
 That means **the API must let the console's origin through CORS** — it has no row
 in the `Sites` table, so it comes from `DASHBOARD_ORIGIN` — and that a blog and
@@ -59,10 +60,14 @@ the console reach the API by different credentials: cookie for readers, bearer
 for admins. `Backend`'s `"smart"` policy scheme picks per request.
 
 **Dashboard pages are static SSR shells, and there is no `blazor.web.js`.**
-Nothing is interactive; the framework script would only add enhanced navigation,
-which swaps the DOM without re-running the page modules. Identity-dependent
-markup starts `hidden` and is revealed by JS. Never introduce `innerHTML` there —
-see `Dashboard/CLAUDE.md`.
+Nothing is Blazor-interactive, and dropping the framework script is what makes
+inline `<script>` work: enhanced navigation swaps the DOM without re-running it,
+so every `Alpine.data` registration would fire once and then never again.
+
+**Razor claims `@`, so Alpine's `@click` shorthand is spelled `x-on:click`
+throughout the Dashboard.** `:` bindings are unaffected. A bare `@` inside a
+`<script>` in a `.razor` file is a Razor transition and will not compile. Bind
+text with `x-text` — never assemble markup. See `Dashboard/CLAUDE.md`.
 
 **The API owns every authorization rule; the Dashboard only reports them.**
 Reader-vs-admin (`IsSiteAdmin`), the `MULTI_TENANCY` registration gate,
@@ -102,12 +107,12 @@ Respect them; do not "fix" them without a measured reason.
 
 ## Dashboard conventions
 
-- Tailwind utilities in markup *and* in the JS that builds rows — `app.css`
-  scans `Styles/js/**/*.js` too, or those classes get purged. `app.css` itself
-  holds only the `h1:focus` rule `<FocusOnNavigate>` forces.
+- Tailwind utilities in markup, including inside Alpine `:class` bindings — it
+  all lives in `.razor` files, which is what `app.css` scans. `app.css` itself
+  holds only the `h1:focus` rule `<FocusOnNavigate>` forces and `[x-cloak]`.
   Vite entry is `Styles/main.js`, output `wwwroot/dist` with stable filenames —
   Blazor's `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
-- Prefer CSS-only interactions to presentational JS (the sidebar toggle is
-  `peer-checked:`). There are no scoped stylesheets.
+- Prefer CSS-only interactions to Alpine for presentation (the sidebar toggle is
+  `peer-checked:`). Alpine is for data and identity. No scoped stylesheets.
 - `BareLayout` for unauthenticated full-screen pages, `MainLayout` for the
   signed-in shell.

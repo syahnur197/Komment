@@ -2,42 +2,131 @@
 
 <PageTitle>Edit comment</PageTitle>
 
-@* One route, two jobs: ?reply=true switches this between editing and replying.
-   The query string is read in the browser, so the shell renders the edit
-   wording and the module rewrites it for a reply. *@
-<div data-page="comment-editor" data-site-id="@SiteId" data-comment-id="@Id" class="max-w-2xl">
-    <a href="/sites/@SiteId/comments" class="text-sm text-sky-700 no-underline hover:underline">Comments</a>
-    <h1 data-title class="text-2xl font-semibold text-slate-900">Edit comment</h1>
+@* One route, two jobs: ?reply=true switches between editing and replying. The
+   query string is read in the browser, so the heading is bound, not rendered. *@
+<div x-data="commentEditor('@SiteId', '@Id')" x-cloak class="max-w-2xl">
+    <a :href="`/sites/${siteId}/comments`" class="text-sm text-sky-700 no-underline hover:underline">Comments</a>
+    <h1 class="text-2xl font-semibold text-slate-900" x-text="title"></h1>
 
-    <p data-error hidden class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"></p>
+    <p x-show="error" x-text="error" role="alert"
+       class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
 
-    <div data-blocked hidden class="mt-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert"></div>
-
-    <p data-status class="mt-4 text-slate-500">Loading…</p>
-
-    <div data-target hidden class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-        <p data-target-slug class="font-mono text-xs text-slate-500"></p>
-        <p data-target-author class="mt-1 text-sm font-medium text-slate-900"></p>
-        <p data-target-body class="mt-1 whitespace-pre-wrap text-sm text-slate-600"></p>
+    <div x-show="blocked">
+        <p x-text="blocked" role="alert" class="mt-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800"></p>
+        <a :href="`/sites/${siteId}/comments`" class="mt-4 block text-sm text-sky-700 hover:underline">Back to comments</a>
     </div>
 
-    <form data-comment-form hidden class="mt-4 space-y-4" novalidate>
+    <p x-show="loading" class="mt-4 text-slate-500">Loading…</p>
+
+    <div x-show="target && !blocked" class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+        <p class="font-mono text-xs text-slate-500" x-text="target?.postSlug"></p>
+        <p class="mt-1 text-sm font-medium text-slate-900" x-text="target?.authorName"></p>
+        <p class="mt-1 whitespace-pre-wrap text-sm text-slate-600" x-text="target?.body"></p>
+    </div>
+
+    <form x-show="!loading && !blocked" x-on:submit.prevent="submit" class="mt-4 space-y-4">
         <div>
-            <label data-body-label for="body" class="block text-sm font-medium text-slate-700">Comment</label>
-            <textarea id="body" name="body" rows="6" required maxlength="4000"
+            <label for="body" class="block text-sm font-medium text-slate-700" x-text="reply ? 'Your reply' : 'Comment'"></label>
+            <textarea id="body" x-model="body" rows="6" required maxlength="4000"
                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none"></textarea>
         </div>
 
         <div class="flex items-center gap-3">
-            <button type="submit" class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
-                Save changes
-            </button>
-            <a href="/sites/@SiteId/comments" class="text-sm text-sky-700 no-underline hover:underline">Cancel</a>
+            <button type="submit" :disabled="busy"
+                    x-text="busy ? 'Saving…' : (reply ? 'Post reply' : 'Save changes')"
+                    class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60"></button>
+            <a :href="`/sites/${siteId}/comments`" class="text-sm text-sky-700 no-underline hover:underline">Cancel</a>
         </div>
     </form>
 </div>
 
-@code {
-    [Parameter] public Guid SiteId { get; set; }
-    [Parameter] public Guid Id { get; set; }
-}
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('commentEditor', (siteId, commentId) => ({
+            siteId,
+            commentId,
+            reply: new URLSearchParams(location.search).get('reply') === 'true',
+            slug: null,
+            target: null,
+            body: '',
+            error: '',
+            blocked: '',
+            loading: true,
+            busy: false,
+
+            get title() {
+                return this.reply ? 'Reply' : 'Edit comment';
+            },
+
+            init() {
+                if (!this.$store.auth.requireAdmin()) return;
+
+                document.title = this.title;
+                this.load();
+            },
+
+            async load() {
+                try {
+                    // Owner-scoped, so it doubles as the check that this site is yours.
+                    this.slug = (await this.$api.get(`/api/site/${this.siteId}`, '')).slug;
+                } catch (failure) {
+                    this.blocked = this.$api.offline(failure) ? failure.message : 'That site does not exist.';
+                    this.loading = false;
+                    return;
+                }
+
+                try {
+                    this.target = await this.$api.get(`/api/comment/${this.commentId}`, '');
+                } catch (failure) {
+                    this.blocked = this.$api.offline(failure) ? failure.message : 'That comment does not exist.';
+                    this.loading = false;
+                    return;
+                }
+
+                // Editing is author-only at the API. Saying so here beats a 403
+                // after typing a reply out.
+                if (!this.reply && this.target.userId !== this.$store.auth.userId) {
+                    this.blocked = 'You can only edit your own comments. You can still delete this one from the comments list.';
+                    this.loading = false;
+                    return;
+                }
+
+                if (!this.reply) this.body = this.target.body;
+
+                this.loading = false;
+            },
+
+            async submit() {
+                this.error = '';
+                this.busy = true;
+
+                try {
+                    const response = this.reply
+                        ? await this.$api.post('/api/comment', {
+                            site: this.slug,
+                            postSlug: this.target.postSlug,
+                            body: this.body,
+                            parentCommentId: this.commentId,
+                        })
+                        : await this.$api.patch(`/api/comment/${this.commentId}`, { body: this.body });
+
+                    if (response.ok) {
+                        location.assign(`/sites/${this.siteId}/comments`);
+                        return;
+                    }
+
+                    if (response.status === 403) {
+                        this.blocked = 'You can only edit your own comments.';
+                        return;
+                    }
+
+                    this.error = await this.$api.error(response, 'Could not save the comment.');
+                } catch (failure) {
+                    this.error = this.$api.message(failure, 'Could not save the comment.');
+                } finally {
+                    this.busy = false;
+                }
+            },
+        }));
+    });
+</script>

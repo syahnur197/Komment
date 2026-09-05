@@ -17,9 +17,145 @@
 
 <body>
     <Routes />
-    @* No blazor.web.js: nothing on any page is interactive, so the framework
-       script would only add enhanced navigation, which swaps the DOM without
-       re-running our modules. Plain navigation keeps every page load honest. *@
+
+    @* Everything shared by every page: who is signed in, and how to call the API.
+       Registered on alpine:init, which Alpine.start() fires after this parses.
+
+       Razor claims `@`, so Alpine's `@click` shorthand is spelled `x-on:click`
+       everywhere in this project. `:` bindings are unaffected. *@
+    <script>
+        document.addEventListener('alpine:init', () => {
+            const base = (document.querySelector('meta[name="komment-api"]')?.content ?? '').replace(/\/+$/, '');
+            const KEY = 'komment.auth';
+
+            const stored = () => {
+                try {
+                    const account = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+
+                    // Checked here as well as by the API, purely to skip a round
+                    // trip that is going to come back 401 anyway.
+                    return account && Date.parse(account.expiresAt) > Date.now() ? account : null;
+                } catch {
+                    // Private mode, blocked site data, or nonsense in storage.
+                    return null;
+                }
+            };
+
+            const persist = (account) => {
+                try {
+                    if (account) localStorage.setItem(KEY, JSON.stringify(account));
+                    else localStorage.removeItem(KEY);
+                } catch {
+                    // Storage refused. The token still works for this page's life.
+                }
+            };
+
+            // Global identity. A store rather than x-data because the layout
+            // chrome and every page read the same thing.
+            Alpine.store('auth', {
+                account: stored(),
+
+                get signedIn() { return this.account !== null; },
+                get name() { return this.account?.name ?? ''; },
+                get userId() { return this.account?.userId ?? null; },
+
+                signIn(account) {
+                    this.account = account;
+                    persist(account);
+                },
+
+                signOut() {
+                    // ponytail: dropping the token is enough — it is the only
+                    // credential, and the API has no revocation list to tell.
+                    this.account = null;
+                    persist(null);
+                    location.assign('/login');
+                },
+
+                // Every page behind the sign-in opens init() with this. Returns
+                // false after starting a redirect; the caller must then load nothing.
+                requireAdmin() {
+                    if (this.account?.isSiteAdmin) return true;
+
+                    this.account = null;
+                    persist(null);
+
+                    const wanted = location.pathname + location.search;
+                    location.replace(wanted === '/' ? '/login' : `/login?returnUrl=${encodeURIComponent(wanted)}`);
+
+                    return false;
+                },
+            });
+
+            class Offline extends Error {}
+
+            const send = async (method, path, body) => {
+                const headers = {};
+                const token = Alpine.store('auth').account?.accessToken;
+
+                if (token) headers.Authorization = `Bearer ${token}`;
+                if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+                let response;
+
+                try {
+                    response = await fetch(base + path, {
+                        method,
+                        headers,
+                        body: body === undefined ? undefined : JSON.stringify(body),
+                    });
+                } catch {
+                    // fetch rejects for network failure, DNS and a CORS rejection
+                    // alike — the browser deliberately does not say which.
+                    throw new Offline('Cannot reach the Komment API. Please try again in a moment.');
+                }
+
+                // The token is gone or expired. Nothing on this page can recover.
+                if (response.status === 401 && token) Alpine.store('auth').signOut();
+
+                return response;
+            };
+
+            // $api in any expression, and this.$api inside a component's methods.
+            Alpine.magic('api', () => ({
+                // Reads fold the status check in: callers want a body or a failure.
+                async get(path, fallback) {
+                    const response = await send('GET', path);
+
+                    if (!response.ok) throw new Error(await this.error(response, fallback));
+
+                    return response.status === 204 ? null : response.json();
+                },
+
+                post: (path, body) => send('POST', path, body),
+                patch: (path, body) => send('PATCH', path, body),
+                delete: (path) => send('DELETE', path),
+
+                // FastEndpoints' Send.ErrorsAsync is { errors: { field: [msg] } };
+                // Results.Problem gives ProblemDetails. Try both, and let the
+                // caller supply the fallback — only it knows what was attempted.
+                async error(response, fallback) {
+                    try {
+                        const body = await response.json();
+
+                        return Object.values(body?.errors ?? {}).flat()[0]
+                            ?? body?.detail ?? body?.title ?? fallback;
+                    } catch {
+                        return fallback;
+                    }
+                },
+
+                message: (failure, fallback) => failure.message || fallback,
+
+                // "Unreachable" and "no such site" deserve different words.
+                offline: (failure) => failure instanceof Offline,
+            }));
+        });
+    </script>
+
+    @* No blazor.web.js. Its enhanced navigation swaps the DOM without re-running
+       each page's own inline script tag, so every Alpine.data registration would
+       fire once and then never again. Plain navigation keeps page loads honest. *@
     <script type="module" src="@Assets["dist/main.js"]"></script>
 </body>
 
