@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A self-hostable comment backend for static blogs (Hugo). The blog is a separate
-static site on another origin; this API serves its comments over CORS with a
-cross-site session cookie. Learning project — part of the `Komment.slnx`
-solution alongside `../LearningJourney/aspnet-roadmap.md`.
+A self-hostable comment backend for static blogs, whatever generator built
+them. The blog is a separate static site on another origin; this API serves its
+comments over CORS with a cross-site session cookie. Part of the `Komment.slnx`
+solution.
 
 `../AppHost` is an Aspire host that launches this API plus `../Dashboard`
 (still the stock template, no comment UI yet) and wires a `.WithReference` from

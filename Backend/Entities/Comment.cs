@@ -9,7 +9,7 @@ public class Comment : ITimestamped
     public Guid SiteId { get; set; }
     public Site Site { get; set; } = default!;
 
-    // Hugo page identity — whatever the blog sends as the permalink key.
+    // Page identity — whatever the blog sends as the permalink key.
     [MaxLength(300)]
     public required string PostSlug { get; set; }
 

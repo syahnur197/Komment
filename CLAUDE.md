@@ -4,18 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A .NET 10 learning solution (`Komment.slnx`) for a developer coming from 9
-years of Laravel. Three projects, orchestrated by Aspire:
+A .NET 10 solution (`Komment.slnx`). Three projects, orchestrated by Aspire:
 
 | Project | What it is |
 |---|---|
 | `Backend/` | The real app — a self-hostable comment backend for static blogs. **Has its own `CLAUDE.md`; read it before touching anything in there.** |
 | `Dashboard/` | Blazor Web App (per-page render modes) — the admin console for `Backend`. Tailwind v4 via Vite. |
 | `AppHost/` | Aspire 13 orchestrator (`Aspire.AppHost.Sdk/13.5.3`). Single-file `AppHost.cs`, no ServiceDefaults project. |
-
-`LearningJourney/aspnet-roadmap.md` is a gitignored personal notes file with
-Laravel→.NET translation tables. It is context for *why* the code looks like it
-does; it is not documentation of this code.
 
 ## Commands
 
