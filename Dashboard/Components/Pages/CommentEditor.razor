@@ -4,7 +4,84 @@
 
 @* One route, two jobs: ?reply=true switches between editing and replying. The
    query string is read in the browser, so the heading is bound, not rendered. *@
-<div x-data="commentEditor('@SiteId', '@Id')" x-cloak class="max-w-2xl">
+<div x-cloak class="max-w-2xl" x-data="{
+        siteId: '@SiteId',
+        commentId: '@Id',
+        reply: new URLSearchParams(location.search).get('reply') === 'true',
+        slug: null,
+        target: null,
+        body: '',
+        error: '',
+        blocked: '',
+        loading: true,
+        busy: false,
+
+        get title() {
+            return this.reply ? 'Reply' : 'Edit comment';
+        },
+
+        block(message) {
+            this.blocked = message;
+            this.loading = false;
+        },
+
+        init() {
+            if (!this.$store.auth.requireAdmin()) return;
+
+            document.title = this.title;
+            this.load();
+        },
+
+        async load() {
+            try {
+                // Owner-scoped, so it doubles as the check that this site is yours.
+                this.slug = (await this.$api.get(`/api/site/${this.siteId}`, '')).slug;
+            } catch (failure) {
+                return this.block(this.$api.offline(failure) ? failure.message : 'That site does not exist.');
+            }
+
+            try {
+                this.target = await this.$api.get(`/api/comment/${this.commentId}`, '');
+            } catch (failure) {
+                return this.block(this.$api.offline(failure) ? failure.message : 'That comment does not exist.');
+            }
+
+            // Editing is author-only at the API. Saying so here beats a 403 after
+            // the reply has been typed out.
+            if (!this.reply && this.target.userId !== this.$store.auth.userId) {
+                return this.block('You can only edit your own comments. You can still delete this one from the comments list.');
+            }
+
+            if (!this.reply) this.body = this.target.body;
+
+            this.loading = false;
+        },
+
+        async submit() {
+            this.error = '';
+            this.busy = true;
+
+            try {
+                const response = this.reply
+                    ? await this.$api.post('/api/comment', {
+                        site: this.slug,
+                        postSlug: this.target.postSlug,
+                        body: this.body,
+                        parentCommentId: this.commentId,
+                      })
+                    : await this.$api.patch(`/api/comment/${this.commentId}`, { body: this.body });
+
+                if (response.ok) return location.assign(`/sites/${this.siteId}/comments`);
+                if (response.status === 403) return this.block('You can only edit your own comments.');
+
+                this.error = await this.$api.error(response, 'Could not save the comment.');
+            } catch (failure) {
+                this.error = this.$api.message(failure, 'Could not save the comment.');
+            } finally {
+                this.busy = false;
+            }
+        },
+     }">
     <a :href="`/sites/${siteId}/comments`" class="text-sm text-sky-700 no-underline hover:underline">Comments</a>
     <h1 class="text-2xl font-semibold text-slate-900" x-text="title"></h1>
 
@@ -40,93 +117,7 @@
     </form>
 </div>
 
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('commentEditor', (siteId, commentId) => ({
-            siteId,
-            commentId,
-            reply: new URLSearchParams(location.search).get('reply') === 'true',
-            slug: null,
-            target: null,
-            body: '',
-            error: '',
-            blocked: '',
-            loading: true,
-            busy: false,
-
-            get title() {
-                return this.reply ? 'Reply' : 'Edit comment';
-            },
-
-            init() {
-                if (!this.$store.auth.requireAdmin()) return;
-
-                document.title = this.title;
-                this.load();
-            },
-
-            async load() {
-                try {
-                    // Owner-scoped, so it doubles as the check that this site is yours.
-                    this.slug = (await this.$api.get(`/api/site/${this.siteId}`, '')).slug;
-                } catch (failure) {
-                    this.blocked = this.$api.offline(failure) ? failure.message : 'That site does not exist.';
-                    this.loading = false;
-                    return;
-                }
-
-                try {
-                    this.target = await this.$api.get(`/api/comment/${this.commentId}`, '');
-                } catch (failure) {
-                    this.blocked = this.$api.offline(failure) ? failure.message : 'That comment does not exist.';
-                    this.loading = false;
-                    return;
-                }
-
-                // Editing is author-only at the API. Saying so here beats a 403
-                // after typing a reply out.
-                if (!this.reply && this.target.userId !== this.$store.auth.userId) {
-                    this.blocked = 'You can only edit your own comments. You can still delete this one from the comments list.';
-                    this.loading = false;
-                    return;
-                }
-
-                if (!this.reply) this.body = this.target.body;
-
-                this.loading = false;
-            },
-
-            async submit() {
-                this.error = '';
-                this.busy = true;
-
-                try {
-                    const response = this.reply
-                        ? await this.$api.post('/api/comment', {
-                            site: this.slug,
-                            postSlug: this.target.postSlug,
-                            body: this.body,
-                            parentCommentId: this.commentId,
-                        })
-                        : await this.$api.patch(`/api/comment/${this.commentId}`, { body: this.body });
-
-                    if (response.ok) {
-                        location.assign(`/sites/${this.siteId}/comments`);
-                        return;
-                    }
-
-                    if (response.status === 403) {
-                        this.blocked = 'You can only edit your own comments.';
-                        return;
-                    }
-
-                    this.error = await this.$api.error(response, 'Could not save the comment.');
-                } catch (failure) {
-                    this.error = this.$api.message(failure, 'Could not save the comment.');
-                } finally {
-                    this.busy = false;
-                }
-            },
-        }));
-    });
-</script>
+@code {
+    [Parameter] public Guid SiteId { get; set; }
+    [Parameter] public Guid Id { get; set; }
+}

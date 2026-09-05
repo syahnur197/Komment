@@ -48,8 +48,10 @@ always; `docker-compose.prod.yml` also needs `BACKEND_PUBLIC_URL`. See
 **The Dashboard is a browser client of the API, exactly like a blog is.** Its
 server renders static HTML shells and nothing else — no `HttpClient`, no session,
 no idea who is signed in. Everything that touches the API is Alpine.js written
-**inline in the `.razor` file it drives**; `Styles/main.js` is the only `.js`
-file and does nothing but import the stylesheet and start Alpine. The admin's
+**inline in the `x-data` on the element it drives** — no page has a `<script>`,
+and `Alpine.data()` is deliberately unused because nothing here is reused.
+`Styles/main.js` is the only `.js` file and does nothing but import the
+stylesheet and start Alpine. The admin's
 credential is a bearer token in their own browser's `localStorage`. The one thing
 the server still tells the browser is where the API is: `ApiBaseUrl` resolves it
 and `App.razor` writes it into `<meta name="komment-api">`.
@@ -60,9 +62,8 @@ the console reach the API by different credentials: cookie for readers, bearer
 for admins. `Backend`'s `"smart"` policy scheme picks per request.
 
 **Dashboard pages are static SSR shells, and there is no `blazor.web.js`.**
-Nothing is Blazor-interactive, and dropping the framework script is what makes
-inline `<script>` work: enhanced navigation swaps the DOM without re-running it,
-so every `Alpine.data` registration would fire once and then never again.
+Nothing is Blazor-interactive, and enhanced navigation would swap the DOM
+without a full page load, leaving Alpine to re-scan a tree it has already seen.
 
 **Razor claims `@`, so Alpine's `@click` shorthand is spelled `x-on:click`
 throughout the Dashboard.** `:` bindings are unaffected. A bare `@` inside a

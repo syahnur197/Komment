@@ -3,7 +3,43 @@
 
 <PageTitle>Sign in</PageTitle>
 
-<div x-data="login" x-cloak class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+<div x-cloak class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm" x-data="{
+        form: { username: '', password: '' },
+        error: '',
+        busy: false,
+
+        async submit() {
+            this.error = '';
+            this.busy = true;
+
+            try {
+                const response = await this.$api.post('/api/auth/token', this.form);
+
+                // The API is deliberately vague to avoid an account-enumeration
+                // oracle; saying more here would give the same thing away.
+                if (!response.ok) return this.error = 'Invalid username or password.';
+
+                const account = await response.json();
+
+                // Readers and admins sign in through the same endpoint. This is
+                // the admin console, so a reader account is not enough.
+                if (!account.isSiteAdmin) return this.error = 'This account cannot manage sites.';
+
+                this.$store.auth.signIn(account);
+
+                // Only ever bounce back inside this app — returnUrl comes from the
+                // query string, so an absolute URL would be an open redirect.
+                const wanted = new URLSearchParams(location.search).get('returnUrl');
+                const safe = wanted && wanted.startsWith('/') && !wanted.startsWith('//');
+
+                location.assign(safe ? wanted : '/');
+            } catch (failure) {
+                this.error = this.$api.message(failure, 'Sign-in failed. Please try again.');
+            } finally {
+                this.busy = false;
+            }
+        },
+     }">
     <h1 class="text-xl font-semibold text-slate-900">Sign in</h1>
     <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
 
@@ -29,51 +65,3 @@
 
     <a href="/register" class="mt-4 block text-sm text-sky-700 hover:underline">Create an admin account</a>
 </div>
-
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('login', () => ({
-            form: { username: '', password: '' },
-            error: '',
-            busy: false,
-
-            async submit() {
-                this.error = '';
-                this.busy = true;
-
-                try {
-                    const response = await this.$api.post('/api/auth/token', this.form);
-
-                    if (!response.ok) {
-                        // The API is deliberately vague to avoid an account-enumeration
-                        // oracle; saying more here would give the same thing away.
-                        this.error = 'Invalid username or password.';
-                        return;
-                    }
-
-                    const account = await response.json();
-
-                    // The API signs in readers and admins through the same endpoint.
-                    // This is the admin console, so a reader account is not enough.
-                    if (!account.isSiteAdmin) {
-                        this.error = 'This account cannot manage sites.';
-                        return;
-                    }
-
-                    this.$store.auth.signIn(account);
-
-                    // Only ever bounce back inside this app — returnUrl comes from
-                    // the query string, so an absolute URL would be an open redirect.
-                    const wanted = new URLSearchParams(location.search).get('returnUrl');
-                    const safe = wanted && wanted.startsWith('/') && !wanted.startsWith('//');
-
-                    location.assign(safe ? wanted : '/');
-                } catch (failure) {
-                    this.error = this.$api.message(failure, 'Sign-in failed. Please try again.');
-                } finally {
-                    this.busy = false;
-                }
-            },
-        }));
-    });
-</script>

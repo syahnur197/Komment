@@ -3,7 +3,35 @@
 
 <PageTitle>Create an admin account</PageTitle>
 
-<div x-data="register" x-cloak class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+<div x-cloak class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm" x-data="{
+        form: { username: '', name: '', email: '', password: '' },
+        error: '',
+        closed: false,
+        busy: false,
+
+        async submit() {
+            this.error = '';
+            this.busy = true;
+
+            try {
+                const response = await this.$api.post('/api/auth/register', this.form);
+
+                // Registering does not sign you in — the API creates the account
+                // and stops there.
+                if (response.ok) return location.assign('/login');
+
+                // MULTI_TENANCY=false and an admin already exists. The API owns
+                // that rule; the console only reports it.
+                if (response.status === 403) return this.closed = true;
+
+                this.error = await this.$api.error(response, 'Could not create the account. Please try again.');
+            } catch (failure) {
+                this.error = this.$api.message(failure, 'Could not create the account.');
+            } finally {
+                this.busy = false;
+            }
+        },
+     }">
     <h1 class="text-xl font-semibold text-slate-900">Create an admin account</h1>
     <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
 
@@ -55,43 +83,3 @@
 
     <a href="/login" class="mt-4 block text-sm text-sky-700 hover:underline">Already have an account? Sign in</a>
 </div>
-
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('register', () => ({
-            form: { username: '', name: '', email: '', password: '' },
-            error: '',
-            closed: false,
-            busy: false,
-
-            async submit() {
-                this.error = '';
-                this.busy = true;
-
-                try {
-                    const response = await this.$api.post('/api/auth/register', this.form);
-
-                    if (response.ok) {
-                        // Registering does not sign you in — the API creates the
-                        // account and stops there.
-                        location.assign('/login');
-                        return;
-                    }
-
-                    // MULTI_TENANCY=false and an admin already exists. The API owns
-                    // that rule; the console only reports it.
-                    if (response.status === 403) {
-                        this.closed = true;
-                        return;
-                    }
-
-                    this.error = await this.$api.error(response, 'Could not create the account. Please try again.');
-                } catch (failure) {
-                    this.error = this.$api.message(failure, 'Could not create the account.');
-                } finally {
-                    this.busy = false;
-                }
-            },
-        }));
-    });
-</script>
