@@ -19,9 +19,9 @@ builder.AddExecutable("tailwind", "npm", "../Dashboard", "run", "dev")
     .ExcludeFromManifest();
 
 builder.AddProject<Projects.Dashboard>("dashboard")
-    // ponytail: reference only sets ConnectionStrings/services__backend__* env vars.
-    // Dashboard needs Microsoft.Extensions.ServiceDiscovery to resolve
-    // "https+http://backend" — add it when the frontend actually calls the API.
+    // The reference only sets ConnectionStrings/services__backend__* env vars;
+    // Dashboard resolves "https+http://backend" from them with
+    // Microsoft.Extensions.ServiceDiscovery (already referenced there).
     .WithReference(backend)
     .WaitFor(backend);
 

@@ -10,7 +10,7 @@ public sealed class GetAllCommentsRequest
     // Which blog is asking. Required — comments are never global.
     public string Site { get; set; } = default!;
 
-    // The Hugo page's own slug; omit to get the whole site's comments.
+    // The blog page's own slug; omit to get the whole site's comments.
     public string? PostSlug { get; set; }
 }
 

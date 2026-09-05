@@ -4,18 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A .NET 10 learning solution (`Komment.slnx`) for a developer coming from 9
-years of Laravel. Three projects, orchestrated by Aspire:
+A .NET 10 solution (`Komment.slnx`). Three projects, orchestrated by Aspire:
 
 | Project | What it is |
 |---|---|
 | `Backend/` | The real app — a self-hostable comment backend for static blogs. **Has its own `CLAUDE.md`; read it before touching anything in there.** |
-| `Dashboard/` | Blazor Web App (per-page render modes) — the admin console for `Backend`. Tailwind v4 via Vite. |
+| `Dashboard/` | Blazor Web App (static SSR throughout) — the admin console for `Backend`. Tailwind v4 via Vite. |
 | `AppHost/` | Aspire 13 orchestrator (`Aspire.AppHost.Sdk/13.5.3`). Single-file `AppHost.cs`, no ServiceDefaults project. |
-
-`LearningJourney/aspnet-roadmap.md` is a gitignored personal notes file with
-Laravel→.NET translation tables. It is context for *why* the code looks like it
-does; it is not documentation of this code.
 
 ## Commands
 
@@ -54,10 +49,13 @@ API must go through the named `HttpClient` (`BackendSessionHandler.ClientName`),
 never a bare `new HttpClient()`. Service discovery resolves
 `https+http://backend` from the env vars Aspire's `.WithReference` injects.
 
-**Auth pages are static SSR on purpose.** `Login.razor` / `Register.razor`
-declare no render mode: a cookie can only be written during the real form POST,
-which interactive server rendering does not give you. Do not add
-`@rendermode InteractiveServer` to them.
+**Every Dashboard page is static SSR on purpose.** Interactive server
+components are registered in `Dashboard/Program.cs` but no page declares a
+render mode, so every mutation is a real form POST. This is load-bearing on
+`Login.razor` / `Register.razor` — a cookie can only be written during the real
+form POST, which interactive server rendering does not give you — and adding
+`@rendermode InteractiveServer` to any other page breaks its forms. See
+`Dashboard/CLAUDE.md` for what that implies.
 
 **The API owns every authorization rule; the Dashboard only reports them.**
 Reader-vs-admin (`IsSiteAdmin`), the `MULTI_TENANCY` registration gate,
@@ -94,7 +92,8 @@ Respect them; do not "fix" them without a measured reason.
 ## Dashboard conventions
 
 - Tailwind utilities in markup; `Styles/app.css` holds only what Blazor's own
-  class names (`.validation-message`, `#blazor-error-ui`) force into CSS.
+  class names (`.invalid`, `.validation-message`, `.blazor-error-boundary`)
+  force into CSS.
   Vite entry is `Styles/main.js`, output `wwwroot/dist` with stable filenames —
   Blazor's `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
 - Prefer CSS-only interactions to JS (the sidebar toggle is `peer-checked:`).

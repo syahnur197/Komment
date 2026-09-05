@@ -31,8 +31,9 @@ Blazor collects static assets. Never commit-fix CSS by editing `wwwroot/dist`.
 ## Architecture
 
 **Every page is static SSR. Nothing declares a render mode.** Interactive server
-components are registered in `Program.cs` and never used — the root `CLAUDE.md`
-line about "per-page render modes" describes the template, not this code. So:
+components are registered in `Program.cs` (`AddInteractiveServerComponents()` /
+`AddInteractiveServerRenderMode()`) and never used — that registration is
+leftover template wiring, not a mode any page opts into. So:
 
 - Mutations are real form POSTs (`EditForm` + `[SupplyParameterFromForm]`), each
   with a unique `FormName` — hence `FormName="@($"delete-{site.SiteId}")"` inside
@@ -91,7 +92,8 @@ component for both) → `/sites/{id}/comments` → `/sites/{id}/comments/{id}`, 
   shapes (`SiteResponse`, `CommentResponse`). Add one only when a page needs it;
   requests go out as anonymous objects.
 - Tailwind utilities in markup. `Styles/app.css` holds only what Blazor's own
-  class names force into CSS (`.validation-message`, `.blazor-error-boundary`).
+  class names force into CSS (`.invalid`, `.validation-message`,
+  `.blazor-error-boundary`).
   Vite entry is `Styles/main.js` → `wwwroot/dist` with stable filenames; Blazor's
   `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
 - `BareLayout` for unauthenticated full-screen pages (`Login`, `Register`),

@@ -4,23 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A self-hostable comment backend for static blogs (Hugo). The blog is a separate
-static site on another origin; this API serves its comments over CORS with a
-cross-site session cookie. Learning project — part of the `Komment.slnx`
-solution alongside `../LearningJourney/aspnet-roadmap.md`.
+A self-hostable comment backend for static blogs, whatever generator built
+them. The blog is a separate static site on another origin; this API serves its
+comments over CORS with a cross-site session cookie. Part of the `Komment.slnx`
+solution.
 
-`../AppHost` is an Aspire host that launches this API plus `../Dashboard`
-(still the stock template, no comment UI yet) and wires a `.WithReference` from
-Blazor to `backend`. Nothing in this project depends on Aspire — no
-ServiceDefaults reference, no telemetry wiring — so `dotnet run` here is still
-the fast path; `aspire run` is for when you want both apps and the dashboard.
+`../AppHost` is an Aspire host that launches this API plus `../Dashboard` (the
+admin console that consumes this API) and wires a `.WithReference` from Blazor
+to `backend`. Nothing in this project depends on Aspire — no ServiceDefaults
+reference, no telemetry wiring — so `dotnet run` here is still the fast path;
+`dotnet run --project ../AppHost` is for when you want both apps and the Aspire
+dashboard.
 
 ## Commands
 
 ```bash
 dotnet run                                  # https://localhost:7017 + http://localhost:5147 (needs a local Postgres)
-dotnet run --project ../AppHost             # easier: starts Postgres in a container for you
-aspire run                                  # from ../AppHost: this API + Dashboard + Aspire dashboard
+dotnet run --project ../AppHost             # this API + Dashboard + Aspire dashboard; starts Postgres in a container
 dotnet build
 dotnet ef migrations add <Name>             # after any entity/DbContext change
 dotnet ef database update                   # or just start the app — it migrates on boot
