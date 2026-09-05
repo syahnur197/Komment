@@ -7,6 +7,11 @@
 #   <api-domain>   -> http://localhost:8017
 #   <admin-domain> -> http://localhost:8222
 # and register https://<api-domain>/signin-google as a Google redirect URI.
+#
+# The admin console runs in the browser, so .env also needs
+#   BACKEND_PUBLIC_URL=https://<api-domain>   (where the browser sends requests)
+#   DASHBOARD_ORIGIN=https://<admin-domain>   (so the API's CORS lets it in)
+#   JWT_SIGNING_KEY=...                       (openssl rand -base64 48)
 services:
   postgres:
     image: postgres:18-alpine
@@ -34,8 +39,10 @@ services:
       # Host, which is what the Google redirect_uri and the Secure cookie need.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       ConnectionStrings__comments: Host=postgres;Database=comments;Username=komment;Password=${POSTGRES_PASSWORD}
-      # The session cookie is encrypted with these; losing them logs everyone out.
+      # Readers' session cookies are encrypted with these; losing them signs every
+      # blog reader out. Admin tokens are signed with JWT_SIGNING_KEY instead.
       DATAPROTECTION_KEYS: /keys
+      DASHBOARD_ORIGIN: ${DASHBOARD_ORIGIN:?set DASHBOARD_ORIGIN in .env}
     volumes:
       - backend-keys:/keys
     # Loopback only — this is unencrypted HTTP, and the tunnel is the only thing
@@ -51,12 +58,11 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
-      # Server-to-server inside the compose network — never out through the tunnel.
-      services__backend__http__0: http://backend:8080
-      # Survives restarts, so auth cookies do too.
-      DATAPROTECTION_KEYS: /keys
-    volumes:
-      - dashboard-keys:/keys
+      # Handed to the browser, which resolves it — so it is the tunnel's public
+      # API hostname, not the compose network name.
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:?set BACKEND_PUBLIC_URL in .env}
+      # No data-protection volume: this app holds no cookie and no session. The
+      # admin's credential is a bearer token in their own browser.
     ports:
       - "127.0.0.1:8222:8080"
     depends_on:
@@ -65,4 +71,3 @@ services:
 volumes:
   postgres-data:
   backend-keys:
-  dashboard-keys:

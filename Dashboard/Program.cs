@@ -1,47 +1,16 @@
 using Dashboard;
 using Dashboard.Components;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+// Static SSR only. Nothing here is interactive and nothing here calls the API:
+// this app renders HTML shells, and the browser talks to the Backend directly.
+builder.Services.AddRazorComponents();
 
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(o =>
-    {
-        o.LoginPath = "/login";
-        o.AccessDeniedPath = "/login";
-        o.ExpireTimeSpan = TimeSpan.FromDays(30);
-        o.SlidingExpiration = true;
-    });
-builder.Services.AddAuthorization();
-builder.Services.AddCascadingAuthenticationState();
-
-// The Dashboard is a *client* of the API: it holds the backend's session cookie
-// server-side (as a claim on its own cookie) and replays it on every call.
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddTransient<BackendSessionHandler>();
-builder.Services.AddServiceDiscovery();
-builder.Services.AddHttpClient(BackendSessionHandler.ClientName,
-        c => c.BaseAddress = new Uri("https+http://backend"))
-    // UseCookies defaults to true, and IHttpClientFactory pools one primary
-    // handler for every caller of this client — so its CookieContainer would
-    // collect each user's API session and replay the most recent one for
-    // everybody. The session must come only from BackendSessionHandler, which
-    // reads it per request off the signed-in user.
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false })
-    .AddServiceDiscovery()
-    .AddHttpMessageHandler<BackendSessionHandler>();
-
-// Without this the keys are per-process: every restart signs everyone out, and
-// two instances cannot read each other's cookies. Only set in Docker — locally
-// the default (user profile) store is already persistent.
-if (builder.Configuration["DATAPROTECTION_KEYS"] is { Length: > 0 } keyPath)
-    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyPath));
+// The only API knowledge left in this project — the public URL to hand the
+// browser. No HttpClient, no session handling, no auth: the Dashboard server
+// does not know or need to know who is signed in.
+builder.Services.AddSingleton<ApiBaseUrl>();
 
 var app = builder.Build();
 
@@ -55,22 +24,7 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.UseAntiforgery();
-
-// ponytail: dropping our cookie is enough — the backend session it carried is
-// unreachable once the claim is gone. Call the API's /api/auth/logout too if
-// server-side revocation ever matters.
-app.MapPost("/logout", async (HttpContext ctx) =>
-{
-    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/");
-});
-
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>();
 
 app.Run();

@@ -4,11 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-The admin console for `../Backend` — a Blazor Web App where a site admin manages
-their sites and moderates comments. It is an **HTTP client of the API**, not a
-co-deployed frontend: it owns no database, no entities, and no authorization
-rules. Part of `Komment.slnx`; see the root `CLAUDE.md` for the solution and
+The admin console for `../Backend` — where a site admin manages their sites and
+moderates comments. It is a **browser client of the API**, the same as a blog
+is: it owns no database, no entities, no authorization rules, and no session.
+Part of `Komment.slnx`; see the root `CLAUDE.md` for the solution and
 `../Backend/CLAUDE.md` before touching the API it calls.
+
+**The server renders HTML; the browser does everything else.** Blazor matches
+the route and emits a static shell. Every fetch, every render of API data, and
+every decision about who is signed in happens in `Styles/js/`. The Dashboard
+server never calls the API and cannot tell one visitor from another.
 
 ## Commands
 
@@ -16,90 +21,95 @@ rules. Part of `Komment.slnx`; see the root `CLAUDE.md` for the solution and
 dotnet run                    # https://localhost:7222 — needs Backend already up
 dotnet run --project ../AppHost   # from repo root: Backend + Dashboard + tailwind watch
 dotnet build                  # runs `npm ci` then `npm run build` first (see below)
+npm run build                 # bundle Styles/ into wwwroot/dist
 npm run dev                   # vite build --watch, standalone; AppHost runs this for you
 ```
 
-There is no test project. Running standalone works because
-`appsettings.Development.json` hard-codes `Services:backend` to
-`https://localhost:7017`; under AppHost, `.WithReference(backend)` supplies the
-same env vars and wins.
+There is no test project. `node --check Styles/js/**/*.js` is the only syntax
+gate on the browser code, so read it carefully.
 
-CSS is an MSBuild concern: `Dashboard.csproj` has a `ViteBuild` target hooked
-`BeforeTargets="ResolveStaticWebAssetsInputs"`, so `wwwroot/dist` exists before
-Blazor collects static assets. Never commit-fix CSS by editing `wwwroot/dist`.
+Running standalone works because `appsettings.Development.json` points
+`Services:backend` at `https://localhost:7017`; under AppHost, `.WithReference`
+supplies the same values and wins. Either way `ApiBaseUrl` reduces them to one
+URL and `App.razor` writes it into `<meta name="komment-api">` — **that meta tag
+is how the browser learns where the API is.**
+
+CSS *and JS* are an MSBuild concern: `Dashboard.csproj` has a `ViteBuild` target
+hooked `BeforeTargets="ResolveStaticWebAssetsInputs"`, so `wwwroot/dist` exists
+before Blazor collects static assets. Never fix anything by editing
+`wwwroot/dist`.
 
 ## Architecture
 
-**Every page is static SSR. Nothing declares a render mode.** Interactive server
-components are registered in `Program.cs` (`AddInteractiveServerComponents()` /
-`AddInteractiveServerRenderMode()`) and never used — that registration is
-leftover template wiring, not a mode any page opts into. So:
+**`Styles/js/` is the application.** The Razor files are shells.
 
-- Mutations are real form POSTs (`EditForm` + `[SupplyParameterFromForm]`), each
-  with a unique `FormName` — hence `FormName="@($"delete-{site.SiteId}")"` inside
-  loops. Two forms sharing a name silently break.
-- A POST re-runs `OnInitializedAsync` before the handler. Pages guard against
-  clobbering typed input (`if (Input is not null) return;` in `SiteEditor`,
-  `Input ??= new()` in `CommentEditor`) and rely on that re-run to repopulate
-  fields the handler needs (`siteSlug`, `target`).
-- No `@onclick`, no JS interop for state. Confirmations are native `confirm()` on
-  the submit button; the sidebar toggle is `peer-checked:`.
-- Adding `@rendermode InteractiveServer` to a page breaks its forms and, on
-  `Login`/`Register`, makes writing the auth cookie impossible.
+| File | Job |
+|---|---|
+| `api.js` | The only place that calls `fetch`. Base URL, `Authorization` header, 401 handling, FastEndpoints error parsing. |
+| `auth.js` | The token in `localStorage`, and `requireAdmin()` — the guard every signed-in page opens with. |
+| `dom.js` | Element building, banners, dates. |
+| `router.js` | Reads `data-page` off the shell and runs the matching module. |
+| `pages/*.js` | One per route. |
+| `layout.js` | Reveals the parts of the shell that depend on being signed in. |
 
-**`ApiComponent` is the base class for anything that calls the API.** Inherit it
-(`@inherits ApiComponent`) rather than injecting `IHttpClientFactory`: it gives
-`Api` (the correctly-configured client), the shared `error` field pages render as
-a red banner, `GuardAsync` (turns an unreachable API into a sentence, not a stack
-trace), `FirstErrorAsync` (unwraps FastEndpoints' `{ errors: { field: [msg] } }`),
-and `CurrentUserIdAsync`.
+**Never use `innerHTML`, and never build markup by concatenating strings.**
+Razor escaped interpolated values; `dom.js` does not exist to be convenient, it
+exists because comment bodies are written by strangers and the auth token is now
+reachable from script. Text goes in as a text node — `h()` and `textContent`, always.
 
-**Two cookies, one identity.** The Dashboard's own auth cookie carries the API's
-`comments.session` value as a claim (`BackendSessionHandler.SessionClaim`);
-`BackendSessionHandler` replays it per request so each user's calls carry that
-user's API session. Three things hold this together — break any one and sessions
-leak between users:
+**Pages are static SSR shells. Nothing declares a render mode, and there is no
+`blazor.web.js`.** Dropping the framework script is deliberate: nothing is
+interactive, and its enhanced navigation swaps the DOM without re-running the
+page modules, so every link would work once and then stop. Consequences:
 
-1. The named client (`BackendSessionHandler.ClientName`) sets
-   `UseCookies = false` on its primary handler. `IHttpClientFactory` pools one
-   primary handler across all callers, so a shared `CookieContainer` would replay
-   the last login for everyone.
-2. `Login.razor` reads `Set-Cookie` off the login response and stores it as a
-   claim. Its follow-up `/api/auth/me` call attaches the cookie *by hand* — the
-   handler reads `HttpContext.User`, which is still anonymous mid-login.
-3. Never `new HttpClient()`. Anything talking to the API goes through the named
-   client, which is what service discovery resolves `https+http://backend` on.
+- A shell renders the same HTML for every visitor. Anything identity-dependent
+  starts `hidden` and is revealed by JS — see `layout.js` and `[data-content]`.
+- The server passes route parameters to the browser through `data-` attributes
+  (`data-site-id`), never by fetching anything itself.
+- Forms are plain `<form novalidate>` with `name` attributes, submitted by
+  `preventDefault` + `fetch`. No `EditForm`, no `[SupplyParameterFromForm]`.
+- Tailwind must be told to scan `Styles/js/**/*.js` (it is, in `app.css`) or
+  every class used only from JS is purged.
+
+**Auth is a bearer token in `localStorage`.** `POST /api/auth/token` returns it
+along with the caller's identity, so there is no follow-up `/api/auth/me`.
+`requireAdmin()` redirects to `/login?returnUrl=…` when it is missing, expired,
+or belongs to a reader rather than an admin; a page that gets `null` back must
+render nothing. Signing out is client-side only — the API has no revocation
+list, and `Tokens.Lifetime` is the real expiry.
 
 **The API is the trust boundary; this app only reports its rules.** Reader-vs-
-admin (`Login` rejects a non-`IsSiteAdmin` account after a successful password
-check), the `MULTI_TENANCY` registration gate (`Register` reads a 403 as "closed"),
-per-owner scoping — all decided by `Backend`. DataAnnotations on the `Input`
-classes mirror the API's validators for convenience only.
+admin, the `MULTI_TENANCY` registration gate (a 403 on register means "closed"),
+per-owner scoping — all decided by `Backend`. There are no DataAnnotations
+mirrors of the API's validators any more: forms carry `required`/`maxlength` as
+the browser's own cheap first pass, and everything else comes back as an error
+from the API.
 
 **Owner scoping is done by fetching the site.** `/api/site/{id}` is owner-scoped,
-so `Comments` and `CommentEditor` fetch it first and treat a non-success as
-"does not exist". That fetch is both the authorization check and the source of
-the slug — comment endpoints key off `site=<slug>`, and `CommentResponse` carries
-no site of its own, so the site id lives in the route.
+so `comments.js` and `comment-editor.js` fetch it first and treat a non-success
+as "does not exist". That fetch is both the authorization check and the source
+of the slug — comment endpoints key off `site=<slug>`, and a comment response
+carries no site of its own.
 
-**Routes.** `/sites` (list) → `/sites/new` | `/sites/{id}` (`SiteEditor`, one
-component for both) → `/sites/{id}/comments` → `/sites/{id}/comments/{id}`, where
-`?reply=true` switches `CommentEditor` between editing and replying.
+**Routes.** `/sites` → `/sites/new` | `/sites/{id}` (`SiteEditor`, one shell for
+both, distinguished by whether `data-site-id` is set) → `/sites/{id}/comments` →
+`/sites/{id}/comments/{id}`, where `?reply=true` switches `comment-editor.js`
+between editing and replying.
 
 ## Conventions
 
-- Response DTOs are `sealed record`s at the project root mirroring the API's
-  shapes (`SiteResponse`, `CommentResponse`). Add one only when a page needs it;
-  requests go out as anonymous objects.
-- Tailwind utilities in markup. `Styles/app.css` holds only what Blazor's own
-  class names force into CSS (`.invalid`, `.validation-message`,
-  `.blazor-error-boundary`).
-  Vite entry is `Styles/main.js` → `wwwroot/dist` with stable filenames; Blazor's
-  `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
+- Response shapes are not modelled anywhere. The API's JSON is camelCase and the
+  JS reads it directly; there is no DTO layer to keep in sync.
+- Tailwind utilities in markup and in `h()` calls. `Styles/app.css` holds only
+  the `h1:focus` rule that `<FocusOnNavigate>` forces.
+- Vite entry is `Styles/main.js` → `wwwroot/dist` with stable filenames; Blazor's
+  `MapStaticAssets`/`@Assets[...]` does the fingerprinting. Imports are static so
+  the bundle stays one file under one name.
+- Prefer CSS-only interactions to JS for presentation (the sidebar toggle is
+  still `peer-checked:`). JS is for data, not for layout.
 - `BareLayout` for unauthenticated full-screen pages (`Login`, `Register`),
-  `MainLayout` for the signed-in shell. `ReconnectModal` is the only scoped
-  stylesheet in the project.
-- API failures surface as a message in `error` (or a `notFound`/`blocked` flag),
-  never as an exception page. `404` on a delete is treated as success.
+  `MainLayout` for the signed-in shell. There are no scoped stylesheets.
+- API failures surface as a message in a `[data-error]` banner, never as an
+  exception. `404` on a delete is treated as success.
 - `ponytail:` comments mark deliberate shortcuts with their upgrade path.
   Respect them; do not "fix" them without a measured reason.

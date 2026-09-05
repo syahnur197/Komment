@@ -2,8 +2,10 @@ using Backend.Data;
 using Backend.Features.Sites;
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using Backend.Features.Auth;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +29,9 @@ foreach (var line in envFile is null ? [] : File.ReadAllLines(envFile))
         Environment.SetEnvironmentVariable(split[0].Trim(), split[1].Trim());
 }
 
+// Named once: the scheme that decides between bearer and cookie per request.
+const string SmartScheme = "smart";
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Scans the assembly at startup for every Endpoint/Validator class and registers
@@ -37,10 +42,12 @@ builder.Services.SwaggerDocument();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("comments")));
 
-// Blogs are static sites on other origins, so the session cookie is cross-site:
-// SameSite=None + Secure, and CORS must allow credentials. The allowed origins
-// are the registered sites, resolved per request — assigned after Build() below
-// because the policy is declared before the provider exists.
+// Every browser client is on another origin: blogs are static sites, and the
+// Dashboard is a browser app talking to this API directly. Blogs come from the
+// Sites table (credentials on, because readers use the cross-site cookie); the
+// Dashboard comes from DASHBOARD_ORIGIN and carries a bearer token instead.
+// Assigned after Build() below because the policy is declared before the
+// provider exists.
 IServiceProvider? services = null;
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
@@ -54,13 +61,34 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 var googleClientId = builder.Configuration["GOOGLE_CLIENT_ID"];
 var googleClientSecret = builder.Configuration["GOOGLE_CLIENT_SECRET"];
 
+// Minted per process in Development, required everywhere else. Registered so
+// the token endpoint can take it by property injection like any dependency.
+var signingKey = Tokens.SigningKey(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(signingKey);
+
 var authBuilder = builder.Services
     .AddAuthentication(o =>
     {
-        // Cookie for everything, including the challenge — an unauthenticated
-        // fetch from the blog must get a 401, not a redirect into Google.
-        // LoginEndpoint names the Google scheme explicitly when it wants OAuth.
-        o.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        // Two credentials reach this API: the blog's cross-site session cookie
+        // and the Dashboard's bearer token. A policy scheme picks per request so
+        // no endpoint has to know which one it got.
+        o.DefaultScheme = SmartScheme;
+        // A policy scheme cannot receive a sign-in, and the Google handler needs
+        // somewhere real to write its cookie — so name the cookie scheme here.
+        o.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    })
+    .AddPolicyScheme(SmartScheme, "Bearer or cookie", o =>
+        o.ForwardDefaultSelector = ctx =>
+            ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? JwtBearerDefaults.AuthenticationScheme
+                : CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        // Claims were written under the exact names UserClaims uses. The default
+        // inbound mapping rewrites well-known ones on the way back in, which
+        // would leave Roles() and UserIdOf looking for claims that moved.
+        o.MapInboundClaims = false;
+        o.TokenValidationParameters = Tokens.Validation(signingKey);
     })
     .AddCookie(o =>
     {

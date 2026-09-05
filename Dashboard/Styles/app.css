@@ -1,25 +1,11 @@
 @import "tailwindcss";
 @source "../Components/**/*.razor";
-
-/* Kept from the stock template: Blazor's built-in validation + error UI
-   emit these class names, so Tailwind utilities can't replace them.
-   Unlayered, so these beat the Tailwind utilities on the same elements.
-
-   The stock rules drew an `outline` — a second ring outside the input's own
-   border, including a green one on every field you had merely typed in. A
-   border-colour change says the same thing without the doubled edge. */
-.invalid { border-color: #dc2626; }
-.validation-message { color: #e50000; }
+/* Rows, banners and empty states are built in JS now, so the class names Tailwind
+   has to find live there too. Without this they are purged from the bundle. */
+@source "./js/**/*.js";
 
 /* `<FocusOnNavigate Selector="h1">` in Routes.razor focuses the heading after
    every navigation so screen readers announce the new page. The browser then
    paints a focus ring around a heading nobody clicked. Keep the focus, drop
    the ring — h1 is not interactive, so no keyboard affordance is lost. */
 h1:focus { outline: none; }
-
-.blazor-error-boundary {
-    background: #b32121;
-    padding: 1rem;
-    color: white;
-}
-.blazor-error-boundary::after { content: "An error has occurred."; }

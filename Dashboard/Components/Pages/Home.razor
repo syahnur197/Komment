@@ -1,11 +1,14 @@
 @page "/"
-@attribute [Authorize]
 
 <PageTitle>Dashboard</PageTitle>
 
-<h1 class="text-2xl font-semibold text-slate-900">Dashboard</h1>
+<div data-page="home">
+    <h1 class="text-2xl font-semibold text-slate-900">Dashboard</h1>
 
-<AuthorizeView>
-    <p class="mt-2 text-slate-600">Signed in as @context.User.Identity!.Name.</p>
-    <a href="sites" class="mt-4 inline-block rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white no-underline hover:bg-sky-800">Manage sites</a>
-</AuthorizeView>
+    @* Hidden until the browser confirms there is a signed-in admin, so an
+       unauthenticated visitor never sees the shell flash before the redirect. *@
+    <div data-content hidden>
+        <p data-signed-in-as class="mt-2 text-slate-600"></p>
+        <a href="/sites" class="mt-4 inline-block rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white no-underline hover:bg-sky-800">Manage sites</a>
+    </div>
+</div>

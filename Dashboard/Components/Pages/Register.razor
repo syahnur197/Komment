@@ -1,124 +1,57 @@
 @page "/register"
 @layout BareLayout
-@using System.ComponentModel.DataAnnotations
-@using Dashboard
-@inherits ApiComponent
-@inject NavigationManager Nav
 
 <PageTitle>Create an admin account</PageTitle>
 
-<div class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+@* Field rules are the API's — RegisterValidator owns them. The `required` and
+   `pattern` attributes here are the browser's own cheap first pass, not a
+   mirror of the API's validation kept in sync by hand. *@
+<div data-page="register" class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
     <h1 class="text-xl font-semibold text-slate-900">Create an admin account</h1>
     <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
 
-    @if (closed)
-    {
-        @* MULTI_TENANCY=false: the API hands out exactly one admin and it is
-           already taken. Nothing on this page can change that, so stop offering. *@
+    @* MULTI_TENANCY=false and the one admin is taken. Nothing on this page can
+       change that, so the form is replaced rather than left there to fail. *@
+    <div data-closed hidden>
         <p class="mt-6 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
             This instance already has an administrator and is not accepting new registrations.
         </p>
-        <a href="login" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sign in</a>
-    }
-    else
-    {
-        <EditForm Model="Input" OnValidSubmit="RegisterAsync" FormName="register" class="mt-6 space-y-4">
-            <DataAnnotationsValidator />
+        <a href="/login" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sign in</a>
+    </div>
 
-            @if (error is not null)
-            {
-                <p class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
-            }
+    <form data-register-form class="mt-6 space-y-4" novalidate>
+        <p data-error hidden class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"></p>
 
-            <div>
-                <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
-                <InputText id="username" @bind-Value="Input.Username" autocomplete="username" autofocus
-                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-                <ValidationMessage For="() => Input.Username" class="mt-1 block text-sm text-red-600" />
-            </div>
+        <div>
+            <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
+            <input id="username" name="username" required maxlength="100" pattern="[a-zA-Z0-9._\-]+"
+                   autocomplete="username" autofocus
+                   class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+        </div>
 
-            <div>
-                <label for="name" class="block text-sm font-medium text-slate-700">Display name</label>
-                <InputText id="name" @bind-Value="Input.Name" autocomplete="name"
-                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-                <ValidationMessage For="() => Input.Name" class="mt-1 block text-sm text-red-600" />
-            </div>
+        <div>
+            <label for="name" class="block text-sm font-medium text-slate-700">Display name</label>
+            <input id="name" name="name" required maxlength="200" autocomplete="name"
+                   class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+        </div>
 
-            <div>
-                <label for="email" class="block text-sm font-medium text-slate-700">Email</label>
-                <InputText id="email" type="email" @bind-Value="Input.Email" autocomplete="email"
-                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-                <ValidationMessage For="() => Input.Email" class="mt-1 block text-sm text-red-600" />
-            </div>
+        <div>
+            <label for="email" class="block text-sm font-medium text-slate-700">Email</label>
+            <input id="email" name="email" type="email" required maxlength="320" autocomplete="email"
+                   class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+        </div>
 
-            <div>
-                <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
-                <InputText id="password" type="password" @bind-Value="Input.Password" autocomplete="new-password"
-                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-                <ValidationMessage For="() => Input.Password" class="mt-1 block text-sm text-red-600" />
-            </div>
+        <div>
+            <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
+            <input id="password" name="password" type="password" required minlength="8" maxlength="200"
+                   autocomplete="new-password"
+                   class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+        </div>
 
-            <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800">
-                Create account
-            </button>
-        </EditForm>
+        <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
+            Create account
+        </button>
+    </form>
 
-        <a href="login" class="mt-4 block text-sm text-sky-700 hover:underline">Already have an account? Sign in</a>
-    }
+    <a href="/login" class="mt-4 block text-sm text-sky-700 hover:underline">Already have an account? Sign in</a>
 </div>
-
-@code {
-    // Static SSR, same as Login — no render mode.
-    [SupplyParameterFromForm] private RegisterInput Input { get; set; } = default!;
-
-    private bool closed;
-
-    protected override void OnInitialized() => Input ??= new();
-
-    // Mirrors the API's RegisterValidator so bad input never leaves the browser.
-    // The API still validates — this is convenience, not the trust boundary.
-    private sealed class RegisterInput
-    {
-        [Required]
-        [StringLength(100)]
-        [RegularExpression("^[a-zA-Z0-9._-]+$", ErrorMessage = "Letters, digits, dot, underscore and dash only.")]
-        public string Username { get; set; } = "";
-
-        [Required, StringLength(200)] public string Name { get; set; } = "";
-        [Required, EmailAddress, StringLength(320)] public string Email { get; set; } = "";
-        [Required, StringLength(200, MinimumLength = 8)] public string Password { get; set; } = "";
-    }
-
-    private async Task RegisterAsync()
-    {
-        await GuardAsync(RegisterCoreAsync);
-    }
-
-    private async Task RegisterCoreAsync()
-    {
-
-        var response = await Api.PostAsJsonAsync("/api/auth/register",
-            new { Input.Username, Input.Email, Input.Name, Input.Password });
-
-        if (response.IsSuccessStatusCode)
-        {
-            // Registering does not sign you in — the API creates the account and
-            // stops there. ponytail: bounce to /login rather than duplicating the
-            // sign-in flow here; auto-login can share code once there is a reason to.
-            Nav.NavigateTo("/login");
-            return;
-        }
-
-        // MULTI_TENANCY=false and an admin already exists. The API owns that rule;
-        // the Dashboard only reports it.
-        if (response.StatusCode is System.Net.HttpStatusCode.Forbidden)
-        {
-            closed = true;
-            return;
-        }
-
-        // Field-level failures (taken username, validator rejects) come back as
-        // FastEndpoints' error response.
-        error = await FirstErrorAsync(response) ?? "Could not create the account. Please try again.";
-    }
-}
