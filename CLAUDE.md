@@ -9,7 +9,7 @@ A .NET 10 solution (`Komment.slnx`). Three projects, orchestrated by Aspire:
 | Project | What it is |
 |---|---|
 | `Backend/` | The real app — a self-hostable comment backend for static blogs. **Has its own `CLAUDE.md`; read it before touching anything in there.** |
-| `Dashboard/` | Blazor Web App (static SSR throughout) — the admin console for `Backend`. Tailwind v4 via Vite. |
+| `Dashboard/` | The admin console for `Backend`. Blazor renders static HTML shells; the browser calls the API. Tailwind v4 + browser JS via Vite. |
 | `AppHost/` | Aspire 13 orchestrator (`Aspire.AppHost.Sdk/13.5.3`). Single-file `AppHost.cs`, no ServiceDefaults project. |
 
 ## Commands
@@ -33,35 +33,42 @@ with plain `GetConnectionString("comments")` and no Aspire client integration, s
 `dotnet run --project Backend` alone falls back to the localhost default in
 `appsettings.json`.
 
-CSS is built by MSBuild — `Dashboard.csproj` runs `npm ci` then `npm run build`
-before static assets are collected, so `dotnet build` alone is enough. Under
-AppHost, `npm run dev` (a `vite build --watch`, not a dev server) runs as a
-plain executable resource; a browser refresh picks up a rebuild.
+CSS **and the Dashboard's JavaScript** are built by MSBuild — `Dashboard.csproj`
+runs `npm ci` then `npm run build` before static assets are collected, so
+`dotnet build` alone is enough. Under AppHost, `npm run dev` (a
+`vite build --watch`, not a dev server) runs as a plain executable resource; a
+browser refresh picks up a rebuild.
+
+The API needs `JWT_SIGNING_KEY` outside Development and `DASHBOARD_ORIGIN`
+always; `docker-compose.prod.yml` also needs `BACKEND_PUBLIC_URL`. See
+`.env.example`.
 
 ## Solution-level notes
 
-**The Dashboard is an HTTP client of the API, not a co-deployed frontend.** It
-holds *two* cookies' worth of identity: its own ASP.NET auth cookie, and — as a
-claim inside it — the API's `comments.session` cookie captured from the login
-response. `BackendSessionHandler` replays that claim on every outbound call, so
-each user's API requests carry that user's session. Anything that talks to the
-API must go through the named `HttpClient` (`BackendSessionHandler.ClientName`),
-never a bare `new HttpClient()`. Service discovery resolves
-`https+http://backend` from the env vars Aspire's `.WithReference` injects.
+**The Dashboard is a browser client of the API, exactly like a blog is.** Its
+server renders static HTML shells and nothing else — no `HttpClient`, no session,
+no idea who is signed in. Everything that touches the API lives in
+`Dashboard/Styles/js/`, and the admin's credential is a bearer token in their own
+browser's `localStorage`. The one thing the server still tells the browser is
+where the API is: `ApiBaseUrl` resolves it and `App.razor` writes it into
+`<meta name="komment-api">`.
 
-**Every Dashboard page is static SSR on purpose.** Interactive server
-components are registered in `Dashboard/Program.cs` but no page declares a
-render mode, so every mutation is a real form POST. This is load-bearing on
-`Login.razor` / `Register.razor` — a cookie can only be written during the real
-form POST, which interactive server rendering does not give you — and adding
-`@rendermode InteractiveServer` to any other page breaks its forms. See
-`Dashboard/CLAUDE.md` for what that implies.
+That means **the API must let the console's origin through CORS** — it has no row
+in the `Sites` table, so it comes from `DASHBOARD_ORIGIN` — and that a blog and
+the console reach the API by different credentials: cookie for readers, bearer
+for admins. `Backend`'s `"smart"` policy scheme picks per request.
+
+**Dashboard pages are static SSR shells, and there is no `blazor.web.js`.**
+Nothing is interactive; the framework script would only add enhanced navigation,
+which swaps the DOM without re-running the page modules. Identity-dependent
+markup starts `hidden` and is revealed by JS. Never introduce `innerHTML` there —
+see `Dashboard/CLAUDE.md`.
 
 **The API owns every authorization rule; the Dashboard only reports them.**
 Reader-vs-admin (`IsSiteAdmin`), the `MULTI_TENANCY` registration gate,
-per-owner site scoping — all decided by `Backend`. Dashboard code mirrors
-validation for convenience but treats the API as the trust boundary, and
-surfaces API failures as messages rather than stack traces.
+per-owner site scoping — all decided by `Backend`. The Dashboard keeps no mirror
+of the API's validators; it surfaces API failures as messages rather than stack
+traces.
 
 **No ServiceDefaults project.** The usual Aspire `AddServiceDefaults()`
 (OpenTelemetry, health checks, resilient HTTP) is deliberately absent. Adding it
@@ -81,22 +88,26 @@ maps public hostnames onto those ports. Both run with
 Google `redirect_uri` and the `Secure` cookie both depend on
 `X-Forwarded-Proto`. Postgres runs as a third service with its own volume,
 Backend migrates on boot behind a `service_healthy` gate, and both apps persist
-data-protection keys to a volume when `DATAPROTECTION_KEYS` is set, without
-which a restart invalidates every cookie. The plain `docker-compose.yml`
-is the local-only version: no tunnel, so the `SameSite=None; Secure` session
-cookie will not stick in a browser.
+`DATAPROTECTION_KEYS` on the **Backend** so a restart does not sign every blog
+reader out — the Dashboard no longer needs it, having no cookie of its own.
+Admin tokens survive restarts as long as `JWT_SIGNING_KEY` is stable.
+`BACKEND_PUBLIC_URL` must be the tunnel's public API hostname, because the
+browser is what resolves it. The plain `docker-compose.yml` is the local-only
+version: no tunnel, so the `SameSite=None; Secure` reader cookie will not stick
+in a browser — the admin console still works, since a bearer token does not
+care.
 
 **`ponytail:` comments mark deliberate shortcuts with their upgrade path.**
 Respect them; do not "fix" them without a measured reason.
 
 ## Dashboard conventions
 
-- Tailwind utilities in markup; `Styles/app.css` holds only what Blazor's own
-  class names (`.invalid`, `.validation-message`, `.blazor-error-boundary`)
-  force into CSS.
+- Tailwind utilities in markup *and* in the JS that builds rows — `app.css`
+  scans `Styles/js/**/*.js` too, or those classes get purged. `app.css` itself
+  holds only the `h1:focus` rule `<FocusOnNavigate>` forces.
   Vite entry is `Styles/main.js`, output `wwwroot/dist` with stable filenames —
   Blazor's `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
-- Prefer CSS-only interactions to JS (the sidebar toggle is `peer-checked:`).
-  There are no `.razor.css` scoped stylesheets outside `ReconnectModal`.
+- Prefer CSS-only interactions to presentational JS (the sidebar toggle is
+  `peer-checked:`). There are no scoped stylesheets.
 - `BareLayout` for unauthenticated full-screen pages, `MainLayout` for the
   signed-in shell.
