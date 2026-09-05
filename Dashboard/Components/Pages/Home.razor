@@ -2,13 +2,11 @@
 
 <PageTitle>Dashboard</PageTitle>
 
-<div data-page="home">
+<div x-cloak x-data="{ init() { this.$store.auth.requireAdmin(); } }">
     <h1 class="text-2xl font-semibold text-slate-900">Dashboard</h1>
 
-    @* Hidden until the browser confirms there is a signed-in admin, so an
-       unauthenticated visitor never sees the shell flash before the redirect. *@
-    <div data-content hidden>
-        <p data-signed-in-as class="mt-2 text-slate-600"></p>
+    <div x-show="$store.auth.signedIn">
+        <p class="mt-2 text-slate-600">Signed in as <span x-text="$store.auth.name"></span>.</p>
         <a href="/sites" class="mt-4 inline-block rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white no-underline hover:bg-sky-800">Manage sites</a>
     </div>
 </div>

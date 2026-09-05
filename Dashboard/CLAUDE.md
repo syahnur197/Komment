@@ -10,10 +10,15 @@ is: it owns no database, no entities, no authorization rules, and no session.
 Part of `Komment.slnx`; see the root `CLAUDE.md` for the solution and
 `../Backend/CLAUDE.md` before touching the API it calls.
 
-**The server renders HTML; the browser does everything else.** Blazor matches
-the route and emits a static shell. Every fetch, every render of API data, and
-every decision about who is signed in happens in `Styles/js/`. The Dashboard
-server never calls the API and cannot tell one visitor from another.
+**The server renders HTML; Alpine does everything else.** Blazor matches the
+route and emits a static shell. Every fetch, every render of API data, and every
+decision about who is signed in happens in Alpine, **in the `x-data` on the
+element it drives**. The Dashboard server never calls the API and cannot tell
+one visitor from another.
+
+`Styles/main.js` is the only `.js` file in the project and is eight lines long:
+it imports the stylesheet, imports Alpine, and starts it. Resist putting anything
+else there — a page's behaviour belongs in its `x-data`.
 
 ## Commands
 
@@ -25,8 +30,9 @@ npm run build                 # bundle Styles/ into wwwroot/dist
 npm run dev                   # vite build --watch, standalone; AppHost runs this for you
 ```
 
-There is no test project. `node --check Styles/js/**/*.js` is the only syntax
-gate on the browser code, so read it carefully.
+There is no test project, and nothing type-checks or lints an `x-data`
+expression — read them carefully. `npm run build` will not catch an error inside
+one; only the browser will.
 
 Running standalone works because `appsettings.Development.json` points
 `Services:backend` at `https://localhost:7017`; under AppHost, `.WithReference`
@@ -34,48 +40,76 @@ supplies the same values and wins. Either way `ApiBaseUrl` reduces them to one
 URL and `App.razor` writes it into `<meta name="komment-api">` — **that meta tag
 is how the browser learns where the API is.**
 
-CSS *and JS* are an MSBuild concern: `Dashboard.csproj` has a `ViteBuild` target
-hooked `BeforeTargets="ResolveStaticWebAssetsInputs"`, so `wwwroot/dist` exists
-before Blazor collects static assets. Never fix anything by editing
-`wwwroot/dist`.
+CSS and the Alpine bundle are an MSBuild concern: `Dashboard.csproj` has a
+`ViteBuild` target hooked `BeforeTargets="ResolveStaticWebAssetsInputs"`, so
+`wwwroot/dist` exists before Blazor collects static assets. Never fix anything by
+editing `wwwroot/dist`.
 
 ## Architecture
 
-**`Styles/js/` is the application.** The Razor files are shells.
+**Alpine, written inline in `x-data`.** A page is markup, and its component is
+the `x-data` expression on the root element — state, getters and methods in one
+object literal:
 
-| File | Job |
-|---|---|
-| `api.js` | The only place that calls `fetch`. Base URL, `Authorization` header, 401 handling, FastEndpoints error parsing. |
-| `auth.js` | The token in `localStorage`, and `requireAdmin()` — the guard every signed-in page opens with. |
-| `dom.js` | Element building, banners, dates. |
-| `router.js` | Reads `data-page` off the shell and runs the matching module. |
-| `pages/*.js` | One per route. |
-| `layout.js` | Reveals the parts of the shell that depend on being signed in. |
+```razor
+<div x-cloak x-data="{
+        sites: [],
+        loading: true,
 
-**Never use `innerHTML`, and never build markup by concatenating strings.**
-Razor escaped interpolated values; `dom.js` does not exist to be convenient, it
-exists because comment bodies are written by strangers and the auth token is now
-reachable from script. Text goes in as a text node — `h()` and `textContent`, always.
+        init() {
+            if (!this.$store.auth.requireAdmin()) return;
+            this.load();
+        },
 
-**Pages are static SSR shells. Nothing declares a render mode, and there is no
-`blazor.web.js`.** Dropping the framework script is deliberate: nothing is
-interactive, and its enhanced navigation swaps the DOM without re-running the
-page modules, so every link would work once and then stop. Consequences:
+        async load() { … },
+     }">
+```
 
-- A shell renders the same HTML for every visitor. Anything identity-dependent
-  starts `hidden` and is revealed by JS — see `layout.js` and `[data-content]`.
-- The server passes route parameters to the browser through `data-` attributes
-  (`data-site-id`), never by fetching anything itself.
-- Forms are plain `<form novalidate>` with `name` attributes, submitted by
-  `preventDefault` + `fetch`. No `EditForm`, no `[SupplyParameterFromForm]`.
-- Tailwind must be told to scan `Styles/js/**/*.js` (it is, in `app.css`) or
-  every class used only from JS is purged.
+Alpine evaluates that expression as the right-hand side of an assignment, so any
+JS expression works: multi-line, `get` accessors, `async` methods, `//` comments
+(never as the last line — Alpine appends to it). `init()` is called for you once
+the scope exists.
 
-**Auth is a bearer token in `localStorage`.** `POST /api/auth/token` returns it
-along with the caller's identity, so there is no follow-up `/api/auth/me`.
-`requireAdmin()` redirects to `/login?returnUrl=…` when it is missing, expired,
-or belongs to a reader rather than an admin; a page that gets `null` back must
-render nothing. Signing out is client-side only — the API has no revocation
+**Do not reach for `Alpine.data()` here.** It registers a *named, reusable*
+component and exists to share one `x-data` context across elements. Every page in
+this app is used once, so the indirection — plus its `alpine:init` listener and
+its own `<script>` — buys nothing and moves the logic away from the markup. There
+are no `<script>` blocks in any page.
+
+`Alpine.store()` and `Alpine.magic()` are the exception, in `App.razor`: globals
+have no `x-data` equivalent and must be registered on `alpine:init`. That is
+where `$store.auth` and `$api` come from, and pages reach them as `this.$store`
+and `this.$api` without importing anything.
+
+**Route parameters are interpolated into the expression.** The server's only
+contribution to a page is the value in the route: `x-data="{ id: '@Id' || null, … }"`.
+
+**Single quotes only inside `x-data`.** It is an HTML attribute delimited by
+double quotes; a `"` anywhere in the expression ends it early.
+
+**`x-text` escapes; that is the point.** Comment bodies are written by strangers
+and the auth token is reachable from script. Bind text, never assemble markup.
+
+**Pages are static SSR shells and there is no `blazor.web.js`.** Enhanced
+navigation swaps the DOM without a full page load, which would leave Alpine to
+re-scan a tree it has already seen. Plain navigation keeps every page load honest.
+
+**`x-cloak` on every component root.** Alpine binds after the deferred module
+runs, so anything driven by `x-show` or `x-text` is briefly present and wrong
+without it. The rule lives in `app.css`.
+
+**Razor claims `@`, so Alpine's `@click` shorthand is spelled `x-on:click`.**
+Everywhere, without exception. `:` bindings (`:href`, `:class`, `:disabled`) are
+unaffected and used normally. A stray `@` anywhere Razor parses — an `x-data`
+expression, or `App.razor`'s bootstrap script — is a Razor transition and will
+not compile. The one intentional use is interpolating a route parameter.
+
+**Auth is a bearer token in `localStorage`, held by the `$store.auth` store.**
+`POST /api/auth/token` returns it with the caller's identity, so there is no
+follow-up `/api/auth/me`. Every page behind the sign-in opens `init()` with
+`if (!this.$store.auth.requireAdmin()) return;` — it redirects to
+`/login?returnUrl=…` and returns false when the token is missing, expired, or
+belongs to a reader. Signing out is client-side only: the API has no revocation
 list, and `Tokens.Lifetime` is the real expiry.
 
 **The API is the trust boundary; this app only reports its rules.** Reader-vs-
@@ -86,22 +120,23 @@ the browser's own cheap first pass, and everything else comes back as an error
 from the API.
 
 **Owner scoping is done by fetching the site.** `/api/site/{id}` is owner-scoped,
-so `comments.js` and `comment-editor.js` fetch it first and treat a non-success
-as "does not exist". That fetch is both the authorization check and the source
+so `Comments` and `CommentEditor` fetch it first and treat a non-success as
+"does not exist" (`$api.offline(failure)` separates that from an unreachable API). That fetch is both the authorization check and the source
 of the slug — comment endpoints key off `site=<slug>`, and a comment response
 carries no site of its own.
 
 **Routes.** `/sites` → `/sites/new` | `/sites/{id}` (`SiteEditor`, one shell for
-both, distinguished by whether `data-site-id` is set) → `/sites/{id}/comments` →
-`/sites/{id}/comments/{id}`, where `?reply=true` switches `comment-editor.js`
-between editing and replying.
+both, distinguished by whether the component was given an id) →
+`/sites/{id}/comments` → `/sites/{id}/comments/{id}`, where `?reply=true` switches
+`CommentEditor` between editing and replying.
 
 ## Conventions
 
-- Response shapes are not modelled anywhere. The API's JSON is camelCase and the
-  JS reads it directly; there is no DTO layer to keep in sync.
-- Tailwind utilities in markup and in `h()` calls. `Styles/app.css` holds only
-  the `h1:focus` rule that `<FocusOnNavigate>` forces.
+- Response shapes are not modelled anywhere. The API's JSON is camelCase and
+  Alpine reads it directly; there is no DTO layer to keep in sync.
+- Tailwind utilities in markup, including inside `:class` object syntax — it all
+  lives in `.razor` files, which is what `app.css` scans. `app.css` itself holds
+  only the `h1:focus` rule `<FocusOnNavigate>` forces and the `[x-cloak]` rule.
 - Vite entry is `Styles/main.js` → `wwwroot/dist` with stable filenames; Blazor's
   `MapStaticAssets`/`@Assets[...]` does the fingerprinting. Imports are static so
   the bundle stays one file under one name.
@@ -109,7 +144,9 @@ between editing and replying.
   still `peer-checked:`). JS is for data, not for layout.
 - `BareLayout` for unauthenticated full-screen pages (`Login`, `Register`),
   `MainLayout` for the signed-in shell. There are no scoped stylesheets.
-- API failures surface as a message in a `[data-error]` banner, never as an
-  exception. `404` on a delete is treated as success.
+- API failures surface as an `error` (or `blocked`/`notFound`) property rendered
+  into a banner, never as an exception. `404` on a delete is treated as success.
+- Buttons that submit carry `:disabled="busy"` and an `x-text` that names what is
+  happening, so a slow API cannot be double-submitted.
 - `ponytail:` comments mark deliberate shortcuts with their upgrade path.
   Respect them; do not "fix" them without a measured reason.

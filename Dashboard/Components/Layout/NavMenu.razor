@@ -13,8 +13,8 @@
         Home
     </NavLink>
 
-    @* Revealed by Styles/js/layout.js when a token is present. *@
-    <div data-admin-nav hidden>
+    @* Only meaningful once signed in — the links 404 at the API otherwise. *@
+    <div x-data x-cloak x-show="$store.auth.signedIn">
         <NavLink class="flex items-center gap-3 rounded px-3 py-2 text-sm no-underline hover:bg-slate-100 hover:text-slate-900"
                  ActiveClass="bg-sky-50 font-medium text-sky-800" href="sites">
             <svg class="size-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">

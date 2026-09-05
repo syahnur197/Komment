@@ -19,11 +19,12 @@
             </label>
 
             @* The server renders this for everyone — it no longer knows who is
-               signed in. Styles/js/layout.js reveals the right half. *@
-            <div class="ml-auto flex items-center gap-4">
-                <span data-user-name hidden class="text-sm text-slate-600"></span>
-                <button data-sign-out hidden type="button" class="text-sm text-sky-700 hover:underline">Sign out</button>
-                <a data-sign-in hidden href="/login" class="text-sm text-sky-700 hover:underline">Sign in</a>
+               signed in. The $store.auth Alpine store does. *@
+            <div x-data x-cloak class="ml-auto flex items-center gap-4">
+                <span x-show="$store.auth.signedIn" x-text="$store.auth.name" class="text-sm text-slate-600"></span>
+                <button x-show="$store.auth.signedIn" type="button" x-on:click="$store.auth.signOut()"
+                        class="text-sm text-sky-700 hover:underline">Sign out</button>
+                <a x-show="!$store.auth.signedIn" href="/login" class="text-sm text-sky-700 hover:underline">Sign in</a>
             </div>
         </header>
 

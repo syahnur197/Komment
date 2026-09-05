@@ -3,54 +3,82 @@
 
 <PageTitle>Create an admin account</PageTitle>
 
-@* Field rules are the API's — RegisterValidator owns them. The `required` and
-   `pattern` attributes here are the browser's own cheap first pass, not a
-   mirror of the API's validation kept in sync by hand. *@
-<div data-page="register" class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+<div x-cloak class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm" x-data="{
+        form: { username: '', name: '', email: '', password: '' },
+        error: '',
+        closed: false,
+        busy: false,
+
+        async submit() {
+            this.error = '';
+            this.busy = true;
+
+            try {
+                const response = await this.$api.post('/api/auth/register', this.form);
+
+                // Registering does not sign you in — the API creates the account
+                // and stops there.
+                if (response.ok) return location.assign('/login');
+
+                // MULTI_TENANCY=false and an admin already exists. The API owns
+                // that rule; the console only reports it.
+                if (response.status === 403) return this.closed = true;
+
+                this.error = await this.$api.error(response, 'Could not create the account. Please try again.');
+            } catch (failure) {
+                this.error = this.$api.message(failure, 'Could not create the account.');
+            } finally {
+                this.busy = false;
+            }
+        },
+     }">
     <h1 class="text-xl font-semibold text-slate-900">Create an admin account</h1>
     <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
 
     @* MULTI_TENANCY=false and the one admin is taken. Nothing on this page can
        change that, so the form is replaced rather than left there to fail. *@
-    <div data-closed hidden>
+    <div x-show="closed">
         <p class="mt-6 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
             This instance already has an administrator and is not accepting new registrations.
         </p>
         <a href="/login" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sign in</a>
     </div>
 
-    <form data-register-form class="mt-6 space-y-4" novalidate>
-        <p data-error hidden class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"></p>
+    @* Field rules are the API's — RegisterValidator owns them. `required` and
+       `pattern` here are the browser's own cheap first pass, not a mirror kept
+       in sync by hand. *@
+    <form x-show="!closed" x-on:submit.prevent="submit" class="mt-6 space-y-4">
+        <p x-show="error" x-text="error" role="alert"
+           class="rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
 
         <div>
             <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
-            <input id="username" name="username" required maxlength="100" pattern="[a-zA-Z0-9._\-]+"
+            <input id="username" x-model="form.username" required maxlength="100" pattern="[a-zA-Z0-9._\-]+"
                    autocomplete="username" autofocus
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
         <div>
             <label for="name" class="block text-sm font-medium text-slate-700">Display name</label>
-            <input id="name" name="name" required maxlength="200" autocomplete="name"
+            <input id="name" x-model="form.name" required maxlength="200" autocomplete="name"
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
         <div>
             <label for="email" class="block text-sm font-medium text-slate-700">Email</label>
-            <input id="email" name="email" type="email" required maxlength="320" autocomplete="email"
+            <input id="email" type="email" x-model="form.email" required maxlength="320" autocomplete="email"
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
         <div>
             <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
-            <input id="password" name="password" type="password" required minlength="8" maxlength="200"
+            <input id="password" type="password" x-model="form.password" required minlength="8" maxlength="200"
                    autocomplete="new-password"
                    class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
-        <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
-            Create account
-        </button>
+        <button type="submit" :disabled="busy" x-text="busy ? 'Creating…' : 'Create account'"
+                class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60"></button>
     </form>
 
     <a href="/login" class="mt-4 block text-sm text-sky-700 hover:underline">Already have an account? Sign in</a>
