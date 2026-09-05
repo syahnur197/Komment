@@ -5,15 +5,26 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Features.Sites;
 
 // Which origins may talk to this API, and where a login is allowed to land.
-// Both answers come from the Sites table, so adding a blog is a POST, not a
-// redeploy.
+// Blogs come from the Sites table, so adding one is a POST, not a redeploy.
 public static class SiteOrigins
 {
+    // The admin console is not a blog: it has no row in Sites, nobody registers
+    // it, and it ships with the API. So it is configuration — comma-separated,
+    // because dev and production are different origins for the same console.
+    public static string[] DashboardOrigins(IConfiguration cfg) =>
+        (cfg["DASHBOARD_ORIGIN"] ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     // ponytail: reads every site per CORS preflight. A handful of rows;
     // wrap in IMemoryCache if this ever shows up in a profile.
     public static bool IsAllowed(IServiceProvider services, string origin)
     {
         using var scope = services.CreateScope();
+
+        var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        if (DashboardOrigins(cfg).Contains(origin, StringComparer.OrdinalIgnoreCase))
+            return true;
+
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         return db.Sites.AsNoTracking()
