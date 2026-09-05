@@ -18,19 +18,12 @@
                 <span class="sr-only">Menu</span>
             </label>
 
+            @* The server renders this for everyone — it no longer knows who is
+               signed in. Styles/js/layout.js reveals the right half. *@
             <div class="ml-auto flex items-center gap-4">
-                <AuthorizeView>
-                    <Authorized>
-                        <span class="text-sm text-slate-600">@context.User.Identity!.Name</span>
-                        <form method="post" action="/logout">
-                            <AntiforgeryToken />
-                            <button type="submit" class="text-sm text-sky-700 hover:underline">Sign out</button>
-                        </form>
-                    </Authorized>
-                    <NotAuthorized>
-                        <a href="login" class="text-sm text-sky-700 hover:underline">Sign in</a>
-                    </NotAuthorized>
-                </AuthorizeView>
+                <span data-user-name hidden class="text-sm text-slate-600"></span>
+                <button data-sign-out hidden type="button" class="text-sm text-sky-700 hover:underline">Sign out</button>
+                <a data-sign-in hidden href="/login" class="text-sm text-sky-700 hover:underline">Sign in</a>
             </div>
         </header>
 
@@ -38,13 +31,4 @@
             @Body
         </main>
     </div>
-</div>
-
-@* Blazor reveals this by setting inline `display: block`, which beats any class —
-   so it has to read correctly as a block, not a flex row. *@
-<div id="blazor-error-ui" data-nosnippet
-     class="fixed inset-x-0 bottom-0 z-50 hidden bg-amber-100 px-5 py-3 pr-10 text-sm text-amber-900 shadow-[0_-1px_2px_rgba(0,0,0,0.2)]">
-    An unhandled error has occurred.
-    <a href="." class="reload ml-2 text-sky-800 underline">Reload</a>
-    <span class="dismiss absolute right-3 top-2 cursor-pointer">🗙</span>
 </div>

@@ -1,22 +1,25 @@
-﻿<!DOCTYPE html>
+﻿@inject ApiBaseUrl ApiBaseUrl
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
-    <ResourcePreloader />
+    @* The browser calls the API itself, and it cannot resolve Aspire's
+       "https+http://backend" — that name only means something inside the server
+       process. So the server resolves it once and writes the public URL here. *@
+    <meta name="komment-api" content="@ApiBaseUrl.Value" />
     <link rel="stylesheet" href="@Assets["dist/main.css"]" />
-    <link rel="stylesheet" href="@Assets["Dashboard.styles.css"]" />
-    <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />
 </head>
 
 <body>
     <Routes />
-    <ReconnectModal />
-    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    @* No blazor.web.js: nothing on any page is interactive, so the framework
+       script would only add enhanced navigation, which swaps the DOM without
+       re-running our modules. Plain navigation keeps every page load honest. *@
     <script type="module" src="@Assets["dist/main.js"]"></script>
 </body>
 

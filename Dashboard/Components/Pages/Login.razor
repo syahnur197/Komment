@@ -1,127 +1,33 @@
 @page "/login"
 @layout BareLayout
-@using System.ComponentModel.DataAnnotations
-@using System.Security.Claims
-@using Dashboard
-@using Microsoft.AspNetCore.Authentication
-@using Microsoft.AspNetCore.Authentication.Cookies
-@inherits ApiComponent
-@inject NavigationManager Nav
 
 <PageTitle>Sign in</PageTitle>
 
-<div class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+@* Static SSR shell. The browser calls the API itself now, so nothing here is
+   filled in by the server — Styles/js/pages/login.js owns the behaviour. *@
+<div data-page="login" class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
     <h1 class="text-xl font-semibold text-slate-900">Sign in</h1>
     <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
 
-    <EditForm Model="Input" OnValidSubmit="SignInAsync" FormName="login" class="mt-6 space-y-4">
-        <DataAnnotationsValidator />
-
-        @if (error is not null)
-        {
-            <p class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
-        }
+    <form data-login-form class="mt-6 space-y-4" novalidate>
+        <p data-error hidden class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert"></p>
 
         <div>
             <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
-            <InputText id="username" @bind-Value="Input.Username" autocomplete="username" autofocus
-                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-            <ValidationMessage For="() => Input.Username" class="mt-1 block text-sm text-red-600" />
+            <input id="username" name="username" required autocomplete="username" autofocus
+                   class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
         <div>
             <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
-            <InputText id="password" type="password" @bind-Value="Input.Password" autocomplete="current-password"
-                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-            <ValidationMessage For="() => Input.Password" class="mt-1 block text-sm text-red-600" />
+            <input id="password" name="password" type="password" required autocomplete="current-password"
+                   class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
         </div>
 
-        <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800">
+        <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
             Sign in
         </button>
-    </EditForm>
+    </form>
 
-    <a href="register" class="mt-4 block text-sm text-sky-700 hover:underline">Create an admin account</a>
+    <a href="/register" class="mt-4 block text-sm text-sky-700 hover:underline">Create an admin account</a>
 </div>
-
-@code {
-    // Static SSR: this component runs inside the real POST, which is the only
-    // place a cookie can be written. Do not give it a render mode.
-    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
-    [SupplyParameterFromForm] private LoginInput Input { get; set; } = default!;
-    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
-
-    protected override void OnInitialized() => Input ??= new();
-
-    private sealed class LoginInput
-    {
-        [Required] public string Username { get; set; } = "";
-        [Required] public string Password { get; set; } = "";
-    }
-
-    private async Task SignInAsync()
-    {
-        await GuardAsync(SignInCoreAsync);
-    }
-
-    private async Task SignInCoreAsync()
-    {
-
-        var login = await Api.PostAsJsonAsync("/api/auth/login/password",
-            new { Input.Username, Input.Password });
-
-        if (!login.IsSuccessStatusCode)
-        {
-            // Same message the API gives, for the same reason: no enumeration oracle.
-            error = "Invalid username or password.";
-            return;
-        }
-
-        // The API's session cookie. Everything the Dashboard does afterwards is
-        // done as this user, so it has to travel with us.
-        var session = login.Headers.TryGetValues("Set-Cookie", out var setCookies)
-            ? setCookies.Select(c => c.Split(';', 2)[0])
-                        .FirstOrDefault(c => c.StartsWith("comments.session="))
-            : null;
-
-        if (session is null)
-        {
-            error = "Sign-in failed. Please try again.";
-            return;
-        }
-
-        // The API signs in readers and admins through the same endpoint. This is
-        // the admin console, so an ordinary reader account is not enough.
-        var me = await Api.SendAsync(WithSession(new HttpRequestMessage(HttpMethod.Get, "/api/auth/me"), session));
-        if (!me.IsSuccessStatusCode || await me.Content.ReadFromJsonAsync<Me>() is not { IsSiteAdmin: true } admin)
-        {
-            error = "This account cannot manage sites.";
-            return;
-        }
-
-        var identity = new ClaimsIdentity(
-        [
-            new Claim(ClaimTypes.NameIdentifier, admin.UserId.ToString()),
-            new Claim(ClaimTypes.Name, admin.Name),
-            new Claim(ClaimTypes.Email, admin.Email),
-            new Claim(BackendSessionHandler.SessionClaim, session),
-        ], CookieAuthenticationDefaults.AuthenticationScheme);
-
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
-
-        // Only ever bounce back into this app — ReturnUrl comes from the query string.
-        Nav.NavigateTo(ReturnUrl is not null && Uri.IsWellFormedUriString(ReturnUrl, UriKind.Relative)
-            ? ReturnUrl
-            : "/");
-    }
-
-    // The handler reads the claim off HttpContext.User, which is still anonymous
-    // during login — so this one call carries the cookie by hand.
-    private static HttpRequestMessage WithSession(HttpRequestMessage request, string session)
-    {
-        request.Headers.Add("Cookie", session);
-        return request;
-    }
-
-    private sealed record Me(Guid UserId, string Email, string Name, string? AvatarUrl, bool IsSiteAdmin);
-}

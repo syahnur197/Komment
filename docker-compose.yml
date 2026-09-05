@@ -20,6 +20,9 @@ services:
     env_file: .env
     environment:
       ConnectionStrings__comments: Host=postgres;Database=comments;Username=komment;Password=${POSTGRES_PASSWORD}
+      # The console is a browser client on another origin, so it needs a CORS
+      # entry. Blog origins still come from the Sites table.
+      DASHBOARD_ORIGIN: http://localhost:8222
     ports:
       - "8017:8080"
     depends_on:
@@ -29,7 +32,9 @@ services:
   dashboard:
     build: ./Dashboard
     environment:
-      services__backend__http__0: http://backend:8080
+      # The *browser* calls the API now, so this must be an address the browser
+      # can reach. "http://backend:8080" only resolves inside this network.
+      BACKEND_PUBLIC_URL: http://localhost:8017
     ports:
       - "8222:8080"
     depends_on:
