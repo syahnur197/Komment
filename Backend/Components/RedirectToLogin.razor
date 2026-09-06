@@ -1,0 +1,15 @@
+@inject NavigationManager Nav
+
+@* AuthorizeRouteView renders this in place of a page the caller may not see.
+   The admin cookie's LoginPath only covers non-component requests, so the
+   component tree needs its own way to send them to the form. *@
+@code {
+    protected override void OnInitialized()
+    {
+        var returnUrl = Nav.ToBaseRelativePath(Nav.Uri);
+
+        Nav.NavigateTo(
+            returnUrl.Length == 0 ? "/login" : $"/login?returnUrl=/{Uri.EscapeDataString(returnUrl)}",
+            forceLoad: false);
+    }
+}

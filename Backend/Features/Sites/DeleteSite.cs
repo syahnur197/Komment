@@ -1,7 +1,6 @@
-using Backend.Data;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Sites;
 
@@ -13,7 +12,7 @@ public sealed class DeleteSiteRequest
 // Takes every comment on that site with it (required FK, so EF cascades).
 public sealed class DeleteSiteEndpoint : Endpoint<DeleteSiteRequest>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public SiteService Sites { get; set; } = default!;
 
     public override void Configure()
     {
@@ -23,18 +22,13 @@ public sealed class DeleteSiteEndpoint : Endpoint<DeleteSiteRequest>
 
     public override async Task HandleAsync(DeleteSiteRequest req, CancellationToken ct)
     {
-        var userId = UserClaims.UserIdOf(User)!.Value;
+        var result = await Sites.DeleteAsync(req.Id, UserClaims.UserIdOf(User)!.Value, ct);
 
-        var site = await Db.Sites.FirstOrDefaultAsync(s => s.SiteId == req.Id && s.OwnerUserId == userId, ct);
-
-        if (site is null)
+        if (!result.IsOk)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-
-        Db.Sites.Remove(site);
-        await Db.SaveChangesAsync(ct);
 
         await Send.NoContentAsync(ct);
     }

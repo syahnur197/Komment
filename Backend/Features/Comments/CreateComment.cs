@@ -1,9 +1,8 @@
-using Backend.Data;
-using Backend.Entities;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
+using FluentValidation.Results;
 
 namespace Backend.Features.Comments;
 
@@ -18,7 +17,8 @@ public sealed class CreateCommentRequest
 }
 
 // FluentValidation is built in. FastEndpoints discovers this by its request type
-// and runs it before HandleAsync — a failure short-circuits with a 400.
+// and runs it before HandleAsync — a failure short-circuits with a 400. Shape
+// only; whether the site or parent exists is CommentService's to answer.
 public sealed class CreateCommentValidator : Validator<CreateCommentRequest>
 {
     public CreateCommentValidator()
@@ -31,7 +31,7 @@ public sealed class CreateCommentValidator : Validator<CreateCommentRequest>
 
 public sealed class CreateCommentEndpoint : Endpoint<CreateCommentRequest, CommentResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public CommentService Comments { get; set; } = default!;
 
     public override void Configure()
     {
@@ -41,48 +41,18 @@ public sealed class CreateCommentEndpoint : Endpoint<CreateCommentRequest, Comme
 
     public override async Task HandleAsync(CreateCommentRequest req, CancellationToken ct)
     {
-        var siteId = await Db.Sites
-            .Where(s => s.Slug == req.Site)
-            .Select(s => s.SiteId)
-            .FirstOrDefaultAsync(ct);
+        var result = await Comments.CreateAsync(
+            UserClaims.UserIdOf(User)!.Value, req.Site, req.PostSlug, req.Body, req.ParentCommentId, ct);
 
-        if (siteId == Guid.Empty)
+        if (!result.IsOk)
         {
-            AddError(r => r.Site, "No such site.");
+            ValidationFailures.Add(new ValidationFailure(result.Field!, result.Message!));
             await Send.ErrorsAsync(cancellation: ct);
             return;
         }
 
-        if (req.ParentCommentId is { } parentId)
-        {
-            // A reply has to hang off a real comment on the same post of the
-            // same site, or the thread the blog renders makes no sense.
-            var parentExists = await Db.Comments.AnyAsync(
-                c => c.CommentId == parentId && c.SiteId == siteId && c.PostSlug == req.PostSlug, ct);
-
-            if (!parentExists)
-            {
-                AddError(r => r.ParentCommentId, "No such comment on this post.");
-                await Send.ErrorsAsync(cancellation: ct);
-                return;
-            }
-        }
-
-        var comment = new Comment
-        {
-            SiteId = siteId,
-            PostSlug = req.PostSlug,
-            Body = req.Body,
-            ParentCommentId = req.ParentCommentId,
-            UserId = UserClaims.UserIdOf(User)!.Value,
-        };
-
-        Db.Comments.Add(comment);
-        await Db.SaveChangesAsync(ct);
-        await Db.Entry(comment).Reference(c => c.User).LoadAsync(ct);
-
         // Location header points at the endpoint type, not a route name string.
         await Send.CreatedAtAsync<GetCommentByIdEndpoint>(
-            new { Id = comment.CommentId }, CommentResponse.From(comment), cancellation: ct);
+            new { Id = result.Value!.CommentId }, result.Value, cancellation: ct);
     }
 }

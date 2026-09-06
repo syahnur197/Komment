@@ -1,8 +1,7 @@
-using Backend.Data;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Sites;
 
@@ -25,7 +24,7 @@ public sealed class UpdateSiteValidator : Validator<UpdateSiteRequest>
 
 public sealed class UpdateSiteEndpoint : Endpoint<UpdateSiteRequest, SiteResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public SiteService Sites { get; set; } = default!;
 
     public override void Configure()
     {
@@ -35,21 +34,15 @@ public sealed class UpdateSiteEndpoint : Endpoint<UpdateSiteRequest, SiteRespons
 
     public override async Task HandleAsync(UpdateSiteRequest req, CancellationToken ct)
     {
-        var userId = UserClaims.UserIdOf(User)!.Value;
+        var result = await Sites.UpdateAsync(
+            req.Id, UserClaims.UserIdOf(User)!.Value, req.Name, req.Origins, ct);
 
-        var site = await Db.Sites.FirstOrDefaultAsync(s => s.SiteId == req.Id && s.OwnerUserId == userId, ct);
-
-        if (site is null)
+        if (!result.IsOk)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
-        site.Name = req.Name ?? site.Name;
-        site.Origins = req.Origins ?? site.Origins;
-
-        await Db.SaveChangesAsync(ct);
-
-        await Send.OkAsync(SiteResponse.From(site), ct);
+        await Send.OkAsync(result.Value!, ct);
     }
 }

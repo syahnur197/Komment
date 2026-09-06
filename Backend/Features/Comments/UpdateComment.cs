@@ -1,8 +1,7 @@
-using Backend.Data;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Comments;
 
@@ -24,7 +23,7 @@ public sealed class UpdateCommentValidator : Validator<UpdateCommentRequest>
 
 public sealed class UpdateCommentEndpoint : Endpoint<UpdateCommentRequest, CommentResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public CommentService Comments { get; set; } = default!;
 
     public override void Configure()
     {
@@ -34,25 +33,19 @@ public sealed class UpdateCommentEndpoint : Endpoint<UpdateCommentRequest, Comme
 
     public override async Task HandleAsync(UpdateCommentRequest req, CancellationToken ct)
     {
-        var comment = await Db.Comments.Include(c => c.User).FirstOrDefaultAsync(c => c.CommentId == req.Id, ct);
+        var result = await Comments.UpdateAsync(req.Id, UserClaims.UserIdOf(User)!.Value, req.Body, ct);
 
-        if (comment is null)
+        switch (result.Kind)
         {
-            await Send.NotFoundAsync(ct);
-            return;
+            case ResultKind.NotFound:
+                await Send.NotFoundAsync(ct);
+                return;
+
+            case ResultKind.Forbidden:
+                await Send.ForbiddenAsync(ct);
+                return;
         }
 
-        // Not business logic — a trust boundary. Anyone signed in can otherwise
-        // rewrite anyone else's comment.
-        if (comment.UserId != UserClaims.UserIdOf(User))
-        {
-            await Send.ForbiddenAsync(ct);
-            return;
-        }
-
-        comment.Body = req.Body;
-        await Db.SaveChangesAsync(ct);
-
-        await Send.OkAsync(CommentResponse.From(comment), ct);
+        await Send.OkAsync(result.Value!, ct);
     }
 }

@@ -15,30 +15,18 @@ services:
       interval: 5s
       retries: 10
 
-  backend:
+  komment:
     build: ./Backend
     env_file: .env
     environment:
       ConnectionStrings__comments: Host=postgres;Database=comments;Username=komment;Password=${POSTGRES_PASSWORD}
-      # The console is a browser client on another origin, so it needs a CORS
-      # entry. Blog origins still come from the Sites table.
-      DASHBOARD_ORIGIN: http://localhost:8222
     ports:
+      # API and admin console, same app: /api/* for blogs, everything else is the
+      # console. The admin cookie is SameSite=Lax, so it sticks over plain HTTP.
       - "8017:8080"
     depends_on:
       postgres:
         condition: service_healthy
-
-  dashboard:
-    build: ./Dashboard
-    environment:
-      # The *browser* calls the API now, so this must be an address the browser
-      # can reach. "http://backend:8080" only resolves inside this network.
-      BACKEND_PUBLIC_URL: http://localhost:8017
-    ports:
-      - "8222:8080"
-    depends_on:
-      - backend
 
 volumes:
   postgres-data:

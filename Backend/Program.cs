@@ -1,11 +1,12 @@
+using Backend.Components;
 using Backend.Data;
+using Backend.Features.Auth;
 using Backend.Features.Sites;
+using Backend.Services;
 using FastEndpoints;
 using FastEndpoints.Swagger;
-using Backend.Features.Auth;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -29,9 +30,6 @@ foreach (var line in envFile is null ? [] : File.ReadAllLines(envFile))
         Environment.SetEnvironmentVariable(split[0].Trim(), split[1].Trim());
 }
 
-// Named once: the scheme that decides between bearer and cookie per request.
-const string SmartScheme = "smart";
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Scans the assembly at startup for every Endpoint/Validator class and registers
@@ -39,15 +37,27 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
 
+// The admin console. Interactive server rendering: the components run in this
+// process, so they call the services below directly — no HTTP, no serialisation,
+// no second deployable.
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("comments")));
 
-// Every browser client is on another origin: blogs are static sites, and the
-// Dashboard is a browser app talking to this API directly. Blogs come from the
-// Sites table (credentials on, because readers use the cross-site cookie); the
-// Dashboard comes from DASHBOARD_ORIGIN and carries a bearer token instead.
-// Assigned after Build() below because the policy is declared before the
-// provider exists.
+// The rules live here, not in the endpoints or the components. Both go through a
+// service; what is allowed is decided once.
+builder.Services.AddScoped<SiteService>();
+builder.Services.AddScoped<CommentService>();
+builder.Services.AddScoped<AccountService>();
+
+// Blogs are static sites on other origins, so the reader's session cookie is
+// cross-site: SameSite=None + Secure, and CORS must allow credentials. The
+// allowed origins are the registered sites, resolved per request — assigned
+// after Build() below because the policy is declared before the provider exists.
+// The console needs no CORS entry at all now: it is served from this origin.
 IServiceProvider? services = null;
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
@@ -57,42 +67,29 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .AllowCredentials()));
 
 // Missing credentials must not take the whole app down — reads and Swagger still
-// work, only the sign-in flow is unavailable (LoginEndpoint says so).
+// work, only the reader sign-in flow is unavailable (LoginEndpoint says so).
 var googleClientId = builder.Configuration["GOOGLE_CLIENT_ID"];
 var googleClientSecret = builder.Configuration["GOOGLE_CLIENT_SECRET"];
-
-// Minted per process in Development, required everywhere else. Registered so
-// the token endpoint can take it by property injection like any dependency.
-var signingKey = Tokens.SigningKey(builder.Configuration, builder.Environment);
-builder.Services.AddSingleton(signingKey);
 
 var authBuilder = builder.Services
     .AddAuthentication(o =>
     {
-        // Two credentials reach this API: the blog's cross-site session cookie
-        // and the Dashboard's bearer token. A policy scheme picks per request so
-        // no endpoint has to know which one it got.
-        o.DefaultScheme = SmartScheme;
+        // Two audiences in one app, so two cookies. A path policy scheme picks:
+        // anything under /api is a blog talking to the API, everything else is
+        // the console. Neither handler ever sees the other's cookie.
+        o.DefaultScheme = AuthSchemes.ByPath;
         // A policy scheme cannot receive a sign-in, and the Google handler needs
-        // somewhere real to write its cookie — so name the cookie scheme here.
-        o.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        // somewhere real to write its cookie — so name the reader scheme here.
+        o.DefaultSignInScheme = AuthSchemes.Reader;
     })
-    .AddPolicyScheme(SmartScheme, "Bearer or cookie", o =>
+    .AddPolicyScheme(AuthSchemes.ByPath, "Reader or admin", o =>
         o.ForwardDefaultSelector = ctx =>
-            ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                ? JwtBearerDefaults.AuthenticationScheme
-                : CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddJwtBearer(o =>
-    {
-        // Claims were written under the exact names UserClaims uses. The default
-        // inbound mapping rewrites well-known ones on the way back in, which
-        // would leave Roles() and UserIdOf looking for claims that moved.
-        o.MapInboundClaims = false;
-        o.TokenValidationParameters = Tokens.Validation(signingKey);
-    })
-    .AddCookie(o =>
+            ctx.Request.Path.StartsWithSegments("/api") ? AuthSchemes.Reader : AuthSchemes.Admin)
+    .AddCookie(AuthSchemes.Reader, o =>
     {
         o.Cookie.Name = "comments.session";
+        // The blog is a different origin, so this cookie is third-party by
+        // definition. Secure is not optional once SameSite is None.
         o.Cookie.SameSite = SameSiteMode.None;
         o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         o.ExpireTimeSpan = TimeSpan.FromDays(30);
@@ -101,6 +98,17 @@ var authBuilder = builder.Services
         // redirect to a login page that does not exist.
         o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
         o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
+    })
+    .AddCookie(AuthSchemes.Admin, o =>
+    {
+        o.Cookie.Name = "komment.admin";
+        // Same-origin, so Lax works — and unlike the reader cookie this one still
+        // sticks over plain HTTP, which is what `docker compose up` serves.
+        o.Cookie.SameSite = SameSiteMode.Lax;
+        o.LoginPath = "/login";
+        o.AccessDeniedPath = "/login";
+        o.ExpireTimeSpan = TimeSpan.FromDays(30);
+        o.SlidingExpiration = true;
     });
 
 if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
@@ -112,13 +120,14 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
         // Handled by the Google handler itself — this is the URI Google redirects
         // back to and the one registered in the Google Cloud console.
         o.CallbackPath = "/signin-google";
+        o.SignInScheme = AuthSchemes.Reader;
         o.ClaimActions.MapJsonKey("picture", "picture");
     });
 }
 
 builder.Services.AddAuthorization();
 
-// The session cookie is encrypted with these keys, so a per-process keyring means
+// Both cookies are encrypted with these keys, so a per-process keyring means
 // every restart signs everyone out. Only set in Docker — locally the default
 // (user profile) store already persists.
 if (builder.Configuration["DATAPROTECTION_KEYS"] is { Length: > 0 } keyPath)
@@ -133,16 +142,45 @@ services = app.Services;
 using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
 
+// The console answers with HTML error and not-found pages. /api must keep
+// answering with status codes — a blog's fetch cannot read an error page — so
+// neither wrapper is applied to it.
+var isDevelopment = app.Environment.IsDevelopment();
+
+app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api"), console =>
+{
+    if (!isDevelopment) console.UseExceptionHandler("/Error", createScopeForErrors: true);
+
+    console.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+});
+
+if (!isDevelopment) app.UseHsts();
+
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 app.UseFastEndpoints();
 
-if (app.Environment.IsDevelopment())
+if (isDevelopment)
 {
     app.UseSwaggerGen();
 }
+
+// ponytail: dropping the admin cookie is enough — signing out of the console does
+// not touch a reader's Google session, which is a separate cookie and a separate
+// identity even for the same person.
+app.MapPost("/logout", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync(AuthSchemes.Admin);
+    return Results.Redirect("/");
+});
+
+// Console routes are everything FastEndpoints did not claim.
+app.MapStaticAssets();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
 
 app.Run();

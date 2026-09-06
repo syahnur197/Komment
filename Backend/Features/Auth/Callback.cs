@@ -1,11 +1,8 @@
 using System.Security.Claims;
-using Backend.Data;
-using Backend.Entities;
 using Backend.Features.Sites;
+using Backend.Services;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Auth;
 
@@ -20,7 +17,8 @@ public sealed class CallbackRequest
 // our own user id so no endpoint has to look the user up again.
 public sealed class CallbackEndpoint : Endpoint<CallbackRequest>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public AccountService Accounts { get; set; } = default!;
+    public SiteService Sites { get; set; } = default!;
 
     public override void Configure()
     {
@@ -31,7 +29,6 @@ public sealed class CallbackEndpoint : Endpoint<CallbackRequest>
     {
         var googleId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var email = User.FindFirstValue(ClaimTypes.Email);
-        var name = User.FindFirstValue(ClaimTypes.Name);
 
         if (googleId is null || email is null)
         {
@@ -39,22 +36,8 @@ public sealed class CallbackEndpoint : Endpoint<CallbackRequest>
             return;
         }
 
-        var user = await Db.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId, ct);
-
-        if (user is null)
-        {
-            user = new User { GoogleId = googleId, Email = email, Name = name ?? email };
-            Db.Users.Add(user);
-        }
-        else
-        {
-            user.Email = email;
-            user.Name = name ?? user.Name;
-        }
-
-        user.AvatarUrl = User.FindFirstValue("picture") ?? user.AvatarUrl;
-
-        await Db.SaveChangesAsync(ct);
+        var user = await Accounts.UpsertGoogleAsync(
+            googleId, email, User.FindFirstValue(ClaimTypes.Name), User.FindFirstValue("picture"), ct);
 
         // Keep the Google identity (it carries the picture claim) and add ours.
         var identity = (ClaimsIdentity)User.Identity!;
@@ -62,9 +45,10 @@ public sealed class CallbackEndpoint : Endpoint<CallbackRequest>
 
         if (user.IsSiteAdmin)
             identity.AddClaim(new Claim(ClaimTypes.Role, UserClaims.SiteAdminRole));
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
 
-        var site = await Db.Sites.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == req.Site, ct);
+        await HttpContext.SignInAsync(AuthSchemes.Reader, new ClaimsPrincipal(identity));
+
+        var site = await Sites.FindBySlugAsync(req.Site, ct);
 
         await Send.ResultAsync(Results.Redirect(SiteOrigins.SafeReturnUrl(req.ReturnUrl, site)));
     }

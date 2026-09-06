@@ -1,7 +1,6 @@
-using Backend.Data;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Comments;
 
@@ -19,14 +18,13 @@ public sealed class GetAllCommentsValidator : Validator<GetAllCommentsRequest>
     public GetAllCommentsValidator() => RuleFor(x => x.Site).NotEmpty();
 }
 
-// Flat list, oldest first, replies carry ParentCommentId. The blog nests them
-// client-side — cheaper than shipping a tree builder and a depth limit here.
-// One class per endpoint (the REPR pattern: Request-Endpoint-Response).
+// One class per endpoint (the REPR pattern: Request-Endpoint-Response). The
+// endpoint binds and maps; CommentService decides.
 public sealed class GetAllCommentsEndpoint : Endpoint<GetAllCommentsRequest, List<CommentResponse>>
 {
     // Property injection — FastEndpoints fills this from the request scope.
     // No constructor, so adding a dependency is a one-line change.
-    public AppDbContext Db { get; set; } = default!;
+    public CommentService Comments { get; set; } = default!;
 
     public override void Configure()
     {
@@ -35,16 +33,6 @@ public sealed class GetAllCommentsEndpoint : Endpoint<GetAllCommentsRequest, Lis
         AllowAnonymous();
     }
 
-    public override async Task HandleAsync(GetAllCommentsRequest req, CancellationToken ct)
-    {
-        var comments = await Db.Comments
-            .AsNoTracking()
-            .Where(c => c.Site.Slug == req.Site)
-            .Where(c => req.PostSlug == null || c.PostSlug == req.PostSlug)
-            .OrderBy(c => c.CreatedAt)
-            .Include(c => c.User)
-            .ToListAsync(ct);
-
-        await Send.OkAsync(comments.Select(CommentResponse.From).ToList(), ct);
-    }
+    public override async Task HandleAsync(GetAllCommentsRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await Comments.ListAsync(req.Site, req.PostSlug, ct), ct);
 }

@@ -1,7 +1,6 @@
-using Backend.Data;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Sites;
 
@@ -12,7 +11,7 @@ public sealed class GetSiteByIdRequest
 
 public sealed class GetSiteByIdEndpoint : Endpoint<GetSiteByIdRequest, SiteResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public SiteService Sites { get; set; } = default!;
 
     public override void Configure()
     {
@@ -22,17 +21,14 @@ public sealed class GetSiteByIdEndpoint : Endpoint<GetSiteByIdRequest, SiteRespo
 
     public override async Task HandleAsync(GetSiteByIdRequest req, CancellationToken ct)
     {
-        var userId = UserClaims.UserIdOf(User)!.Value;
+        var result = await Sites.GetAsync(req.Id, UserClaims.UserIdOf(User)!.Value, ct);
 
-        var site = await Db.Sites.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.SiteId == req.Id && s.OwnerUserId == userId, ct);
-
-        if (site is null)
+        if (!result.IsOk)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
-        await Send.OkAsync(SiteResponse.From(site), ct);
+        await Send.OkAsync(result.Value!, ct);
     }
 }

@@ -3,15 +3,13 @@
 #
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
-# Point the tunnel's public hostnames at these:
-#   <api-domain>   -> http://localhost:8017
-#   <admin-domain> -> http://localhost:8222
-# and register https://<api-domain>/signin-google as a Google redirect URI.
+# One app serves both: /api/* is the comment API blogs call, everything else is
+# the admin console. Point one public hostname at it:
+#   <domain> -> http://localhost:8017
+# and register https://<domain>/signin-google as a Google redirect URI.
 #
-# The admin console runs in the browser, so .env also needs
-#   BACKEND_PUBLIC_URL=https://<api-domain>   (where the browser sends requests)
-#   DASHBOARD_ORIGIN=https://<admin-domain>   (so the API's CORS lets it in)
-#   JWT_SIGNING_KEY=...                       (openssl rand -base64 48)
+# The console uses Blazor interactive server rendering, so the tunnel must pass
+# WebSockets through — cloudflared does by default.
 services:
   postgres:
     image: postgres:18-alpine
@@ -30,7 +28,7 @@ services:
       interval: 5s
       retries: 10
 
-  backend:
+  komment:
     build: ./Backend
     restart: unless-stopped
     env_file: .env
@@ -39,12 +37,11 @@ services:
       # Host, which is what the Google redirect_uri and the Secure cookie need.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       ConnectionStrings__comments: Host=postgres;Database=comments;Username=komment;Password=${POSTGRES_PASSWORD}
-      # Readers' session cookies are encrypted with these; losing them signs every
-      # blog reader out. Admin tokens are signed with JWT_SIGNING_KEY instead.
+      # Both cookies are encrypted with these; losing them signs out every blog
+      # reader and every admin at once.
       DATAPROTECTION_KEYS: /keys
-      DASHBOARD_ORIGIN: ${DASHBOARD_ORIGIN:?set DASHBOARD_ORIGIN in .env}
     volumes:
-      - backend-keys:/keys
+      - komment-keys:/keys
     # Loopback only — this is unencrypted HTTP, and the tunnel is the only thing
     # that should reach it.
     ports:
@@ -53,21 +50,6 @@ services:
       postgres:
         condition: service_healthy
 
-  dashboard:
-    build: ./Dashboard
-    restart: unless-stopped
-    environment:
-      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
-      # Handed to the browser, which resolves it — so it is the tunnel's public
-      # API hostname, not the compose network name.
-      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:?set BACKEND_PUBLIC_URL in .env}
-      # No data-protection volume: this app holds no cookie and no session. The
-      # admin's credential is a bearer token in their own browser.
-    ports:
-      - "127.0.0.1:8222:8080"
-    depends_on:
-      - backend
-
 volumes:
   postgres-data:
-  backend-keys:
+  komment-keys:

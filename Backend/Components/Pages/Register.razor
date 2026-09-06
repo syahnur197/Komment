@@ -1,0 +1,114 @@
+@page "/register"
+@layout BareLayout
+@using System.ComponentModel.DataAnnotations
+@inject AccountService Accounts
+@inject NavigationManager Nav
+
+<PageTitle>Create an admin account</PageTitle>
+
+<div class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+    <h1 class="text-xl font-semibold text-slate-900">Create an admin account</h1>
+    <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
+
+    @if (closed)
+    {
+        @* MULTI_TENANCY=false: the instance hands out exactly one admin and it is
+           already taken. Nothing on this page can change that, so stop offering. *@
+        <p class="mt-6 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
+            This instance already has an administrator and is not accepting new registrations.
+        </p>
+        <a href="login" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sign in</a>
+    }
+    else
+    {
+        <EditForm Model="Input" OnValidSubmit="RegisterAsync" FormName="register" class="mt-6 space-y-4">
+            <DataAnnotationsValidator />
+
+            @if (error is not null)
+            {
+                <p class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
+            }
+
+            <div>
+                <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
+                <InputText id="username" @bind-Value="Input.Username" autocomplete="username" autofocus
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                <ValidationMessage For="() => Input.Username" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <div>
+                <label for="name" class="block text-sm font-medium text-slate-700">Display name</label>
+                <InputText id="name" @bind-Value="Input.Name" autocomplete="name"
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                <ValidationMessage For="() => Input.Name" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <div>
+                <label for="email" class="block text-sm font-medium text-slate-700">Email</label>
+                <InputText id="email" type="email" @bind-Value="Input.Email" autocomplete="email"
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                <ValidationMessage For="() => Input.Email" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
+                <InputText id="password" type="password" @bind-Value="Input.Password" autocomplete="new-password"
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                <ValidationMessage For="() => Input.Password" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800">
+                Create account
+            </button>
+        </EditForm>
+
+        <a href="login" class="mt-4 block text-sm text-sky-700 hover:underline">Already have an account? Sign in</a>
+    }
+</div>
+
+@code {
+    // Static SSR, same as Login — it posts to a page that may need to redirect,
+    // and it shares that page's shape. No render mode.
+    [SupplyParameterFromForm] private RegisterInput Input { get; set; } = default!;
+
+    private bool closed;
+    private string? error;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    // Mirrors the API's RegisterValidator so bad input never leaves the browser.
+    // AccountService still validates — this is convenience, not the boundary.
+    private sealed class RegisterInput
+    {
+        [Required]
+        [StringLength(100)]
+        [RegularExpression("^[a-zA-Z0-9._-]+$", ErrorMessage = "Letters, digits, dot, underscore and dash only.")]
+        public string Username { get; set; } = "";
+
+        [Required, StringLength(200)] public string Name { get; set; } = "";
+        [Required, EmailAddress, StringLength(320)] public string Email { get; set; } = "";
+        [Required, StringLength(200, MinimumLength = 8)] public string Password { get; set; } = "";
+    }
+
+    private async Task RegisterAsync()
+    {
+        var result = await Accounts.RegisterAsync(Input.Username, Input.Email, Input.Name, Input.Password, default);
+
+        switch (result.Kind)
+        {
+            case ResultKind.Ok:
+                // Registering does not sign you in — the service creates the
+                // account and stops there.
+                Nav.NavigateTo("/login");
+                return;
+
+            case ResultKind.Forbidden:
+                closed = true;
+                return;
+
+            default:
+                error = result.Message ?? "Could not create the account. Please try again.";
+                return;
+        }
+    }
+}

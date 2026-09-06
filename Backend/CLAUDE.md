@@ -4,40 +4,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A self-hostable comment backend for static blogs, whatever generator built
-them. The blog is a separate static site on another origin; this API serves its
-comments over CORS with a cross-site session cookie. Part of the `Komment.slnx`
-solution.
+A self-hostable comment backend for static blogs, whatever generator built them,
+**and the admin console that manages it** — one ASP.NET process, two audiences:
 
-Two kinds of client reach it, and the difference runs through the auth code:
-blogs are pages on someone else's origin whose readers carry a cross-site
-session cookie, and `../Dashboard` is a browser app that carries a bearer token.
+- `/api/*` — FastEndpoints. A blog is a static site on another origin, so this is
+  served over CORS with a cross-site session cookie.
+- everything else — Blazor. The console, rendered interactively on the server.
 
-`../AppHost` is an Aspire host that launches this API plus `../Dashboard` (the
-admin console that consumes this API) and wires a `.WithReference` from Blazor
-to `backend`. Nothing in this project depends on Aspire — no ServiceDefaults
-reference, no telemetry wiring — so `dotnet run` here is still the fast path;
-`dotnet run --project ../AppHost` is for when you want both apps and the Aspire
-dashboard.
+They share `Data/`, `Services/` and a process. They do not share a cookie.
+
+`../AppHost` is an Aspire host that starts Postgres and this app. Nothing here
+depends on Aspire — no ServiceDefaults reference, no telemetry wiring — so
+`dotnet run` is still the fast path if you have a local Postgres;
+`dotnet run --project ../AppHost` gets you the container and the Aspire dashboard.
 
 ## Commands
 
 ```bash
 dotnet run                                  # https://localhost:7017 + http://localhost:5147 (needs a local Postgres)
-dotnet run --project ../AppHost             # this API + Dashboard + Aspire dashboard; starts Postgres in a container
-dotnet build
+dotnet run --project ../AppHost             # same, but starts Postgres in a container
+dotnet build                                # also runs npm ci + vite build for Tailwind
+npm run build                               # Tailwind alone, into wwwroot/dist
 dotnet ef migrations add <Name>             # after any entity/DbContext change
 dotnet ef database update                   # or just start the app — it migrates on boot
 ```
 
-Swagger UI is at `/swagger` in Development only. There is no test project yet.
-
-`JWT_SIGNING_KEY` is required outside Development — the app refuses to start
-without it, because a default in the source would let anyone who read it mint
-admin tokens. Development generates a random key per process, so tokens do not
-survive a restart.
+Swagger UI is at `/swagger` in Development only, and documents `/api/*` — the
+console is not an API and does not appear there. There is no test project yet.
 
 ## Architecture
+
+**`Services/` owns every rule; `Features/` and `Components/` only phrase them.**
+`SiteService`, `CommentService` and `AccountService` decide what is allowed —
+owner-scoping, author-only edits, author-or-owner deletes, the `MULTI_TENANCY`
+gate — and answer with a `Result` carrying `Ok`/`NotFound`/`Forbidden`/`Invalid`.
+An endpoint turns that into a status code; a component turns it into a message.
+**Nothing outside `Services/` and `Data/` touches `AppDbContext`** (the one
+exception is `SiteOrigins`, which is CORS infrastructure, not a request handler).
+When this was two apps an HTTP boundary enforced that. Now it is a convention,
+which makes it easier to break and more important to keep.
 
 **FastEndpoints (REPR), not controllers.** One file per endpoint under
 `Features/<Area>/`, each holding its request DTO, its `Validator<TRequest>`, and
@@ -57,8 +62,7 @@ not constructors.
 the `Sites` table per preflight, so registering a blog is `POST /api/site` rather
 than a redeploy. The same table backs `SafeReturnUrl`, which is the open-redirect
 guard on the OAuth callback. The admin console is the one origin that is *not* a
-row in that table — nobody registers it, so it comes from `DASHBOARD_ORIGIN`
-(comma-separated; dev and production are different origins for the same app).
+row in that table, and needs none: it is served from this same origin.
 
 **Two account kinds, one `Users` table.** Readers sign in with Google
 (`GoogleId` set); site admins register with username/password (`IsSiteAdmin`,
@@ -67,23 +71,23 @@ PBKDF2 via `PasswordHasher<User>`). Both paths build claims through
 principal and never re-look-up. `MULTI_TENANCY` (env) decides whether
 registration stays open or closes after the first admin.
 
-**Two credentials, and no endpoint knows which it got.** A `"smart"` policy
-scheme (`Program.cs`) forwards to JWT bearer when the request carries
-`Authorization: Bearer` and to the cookie otherwise. Because `Tokens.Create`
-signs the very claims `UserClaims.For` produces, `Roles()`, `UserIdOf` and every
-inline ownership check work identically either way — which is why adding token
-auth changed no endpoint. Two traps live here: `DefaultSignInScheme` must name
-the cookie scheme (a policy scheme cannot receive the Google handler's sign-in),
-and `MapInboundClaims` is off so validation does not rename claims on the way
-back in.
+**Two cookies, chosen by path.** `AuthSchemes.Reader` (`comments.session`,
+`SameSite=None; Secure`) is the blog reader's — third-party by definition,
+because the blog is on another origin. `AuthSchemes.Admin` (`komment.admin`,
+`SameSite=Lax`) is the console's, and being `Lax` is why it still works over the
+plain HTTP that `docker compose up` serves. A policy scheme forwards `/api/*` to
+the reader and everything else to the admin. Two traps live here:
+`DefaultSignInScheme` must name a real scheme (a policy scheme cannot receive the
+Google handler's sign-in), and `SiteGroup` names `AuthSchemes.Admin` explicitly
+because it sits under `/api` but is an admin operation.
 
 **Cookie config is deliberate and load-bearing:** `SameSite=None` + `Secure`
 because the blog is cross-origin, and `OnRedirectToLogin`/`AccessDenied` are
 overridden to return 401/403 — an API must not redirect a `fetch` into Google.
 The Google handler is only registered when `GOOGLE_CLIENT_ID`/`SECRET` are
-present; everything else keeps working without them. The Dashboard deliberately
-does *not* use this cookie: a third-party cookie is what Safari blocks and
-Firefox partitions, which is the whole reason tokens exist.
+present; everything else keeps working without them. The console deliberately
+does *not* use this cookie — a third-party cookie is what Safari blocks and
+Firefox partitions, and the console has no need to be third-party.
 
 **Comment threading is flat on the wire.** `ParentCommentId` self-reference with
 cascade delete; `GetAllComments` returns an ordered flat list and the blog nests
@@ -107,3 +111,21 @@ client-side. Timestamps are set centrally by `AppDbContext.SaveChanges*` for any
   in the group file.
 - The codebase carries `ponytail:` comments marking deliberate shortcuts with
   their upgrade path. Respect them; do not "fix" them without a measured reason.
+
+## The console
+
+**Every page is `@rendermode InteractiveServer` except `Login` and `Register`.**
+Components run in this process and `@inject SiteService` / `CommentService`
+directly — no HTTP, no DTO layer, no client-side JavaScript. The auth pages
+declare no render mode on purpose: a cookie can only be written during a real
+form POST, which an interactive circuit does not give you. Do not add a render
+mode to them, and do not remove it from the others.
+
+- `[Authorize]` plus `AuthorizeRouteView`; `RedirectToLogin` handles the
+  unauthenticated case, because the cookie's `LoginPath` only covers requests
+  that are not component renders.
+- The current admin's id comes from the cascading `AuthenticationState` through
+  `UserClaims.UserIdOf` — the same helper the endpoints use.
+- Destructive actions confirm inline with component state, not a JS `confirm()`.
+- `Components/Pages/` mirrors the routes; `Layout/` holds the two layouts and
+  `ReconnectModal`, which is the only scoped stylesheet.

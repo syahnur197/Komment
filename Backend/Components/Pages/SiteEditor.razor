@@ -1,0 +1,158 @@
+@page "/sites/new"
+@page "/sites/{Id:guid}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@inject SiteService Sites
+@inject NavigationManager Nav
+
+<PageTitle>@(IsNew ? "Add site" : "Edit site")</PageTitle>
+
+<div class="max-w-xl">
+    <h1 class="text-2xl font-semibold text-slate-900">@(IsNew ? "Add site" : "Edit site")</h1>
+
+    @if (error is not null)
+    {
+        <p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
+    }
+
+    @if (notFound)
+    {
+        <p class="mt-4 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">That site does not exist.</p>
+        <a href="sites" class="mt-4 block text-sm text-sky-700 hover:underline">Back to sites</a>
+    }
+    else if (input is null)
+    {
+        <p class="mt-4 text-slate-500">Loading…</p>
+    }
+    else
+    {
+        <EditForm Model="input" OnValidSubmit="SubmitAsync" class="mt-6 space-y-4">
+            <DataAnnotationsValidator />
+
+            <div>
+                <label for="name" class="block text-sm font-medium text-slate-700">Name</label>
+                <InputText id="name" @bind-Value="input.Name"
+                           class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                <ValidationMessage For="() => input.Name" class="mt-1 block text-sm text-red-600" />
+            </div>
+
+            <div>
+                <label for="slug" class="block text-sm font-medium text-slate-700">Slug</label>
+                @if (IsNew)
+                {
+                    <InputText id="slug" @bind-Value="input.Slug"
+                               class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 font-mono shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                    <ValidationMessage For="() => input.Slug" class="mt-1 block text-sm text-red-600" />
+                    <p class="mt-1 text-sm text-slate-500">How the blog identifies itself. Lowercase letters, digits and dashes.</p>
+                }
+                else
+                {
+                    @* SiteService refuses slug edits: blogs already embed it in their requests. *@
+                    <p class="mt-1 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-slate-500">@input.Slug</p>
+                    <p class="mt-1 text-sm text-slate-500">The slug cannot change — blogs already send it.</p>
+                }
+            </div>
+
+            <div>
+                <label for="origins" class="block text-sm font-medium text-slate-700">Origins</label>
+                <InputTextArea id="origins" @bind-Value="input.Origins" rows="3"
+                               class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 font-mono text-sm shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+                <ValidationMessage For="() => input.Origins" class="mt-1 block text-sm text-red-600" />
+                <p class="mt-1 text-sm text-slate-500">
+                    One per line. Scheme, host and port only — no trailing slash. This is the CORS allowlist.
+                </p>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button type="submit" disabled="@busy" class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
+                    @(IsNew ? "Add site" : "Save changes")
+                </button>
+                <a href="sites" class="text-sm text-sky-700 no-underline hover:underline">Cancel</a>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private SiteInput? input;
+    private Guid ownerId;
+    private bool notFound;
+    private bool busy;
+    private string? error;
+
+    private bool IsNew => Id is null;
+
+    private sealed class SiteInput
+    {
+        [Required, StringLength(200)] public string Name { get; set; } = "";
+
+        [Required]
+        [StringLength(100)]
+        [RegularExpression("^[a-z0-9-]+$", ErrorMessage = "Lowercase letters, digits and dashes only.")]
+        public string Slug { get; set; } = "";
+
+        [Required, StringLength(1000)] public string Origins { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ownerId = UserClaims.UserIdOf((await AuthState).User)!.Value;
+
+        if (IsNew)
+        {
+            input = new();
+            return;
+        }
+
+        var result = await Sites.GetAsync(Id!.Value, ownerId, default);
+
+        if (!result.IsOk)
+        {
+            notFound = true;
+            return;
+        }
+
+        // The textarea is one origin per line; the service stores them
+        // comma-separated and hands them back as an array.
+        input = new()
+        {
+            Name = result.Value!.Name,
+            Slug = result.Value.Slug,
+            Origins = string.Join('\n', result.Value.Origins),
+        };
+    }
+
+    private async Task SubmitAsync()
+    {
+        busy = true;
+        error = null;
+
+        var origins = string.Join(',', input!.Origins
+            .Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var result = IsNew
+            ? await Sites.CreateAsync(ownerId, input.Slug, input.Name, origins, default)
+            : await Sites.UpdateAsync(Id!.Value, ownerId, input.Name, origins, default);
+
+        busy = false;
+
+        switch (result.Kind)
+        {
+            case ResultKind.Ok:
+                Nav.NavigateTo("/sites");
+                return;
+
+            case ResultKind.NotFound:
+                notFound = true;
+                return;
+
+            default:
+                error = result.Message ?? "Could not save the site.";
+                return;
+        }
+    }
+}
