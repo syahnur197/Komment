@@ -4,22 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A .NET 10 solution (`Komment.slnx`). Three projects, orchestrated by Aspire:
+A .NET 10 solution (`Komment.slnx`). Two projects, orchestrated by Aspire:
 
 | Project | What it is |
 |---|---|
-| `Backend/` | The real app — a self-hostable comment backend for static blogs. **Has its own `CLAUDE.md`; read it before touching anything in there.** |
-| `Dashboard/` | The admin console for `Backend`. Blazor renders static HTML shells; Alpine.js calls the API from the browser. Tailwind v4 via Vite. |
+| `Backend/` | The whole app — a self-hostable comment backend for static blogs, plus the admin console that manages it. **Has its own `CLAUDE.md`; read it before touching anything in there.** |
 | `AppHost/` | Aspire 13 orchestrator (`Aspire.AppHost.Sdk/13.5.3`). Single-file `AppHost.cs`, no ServiceDefaults project. |
+
+`Backend/` is one ASP.NET process serving two audiences. `/api/*` is
+FastEndpoints, called cross-origin by blogs. Everything else is Blazor: the
+admin console, rendered interactively on the server. They share a database, a
+service layer and a process — but not a cookie.
 
 ## Commands
 
 ```bash
-dotnet run --project AppHost          # everything + Aspire dashboard (no `aspire` CLI installed)
-dotnet run --project Backend          # API alone: https://localhost:7017
-dotnet run --project Dashboard        # frontend alone: https://localhost:7222 (needs Backend up)
+dotnet run --project AppHost          # app + Postgres + Aspire dashboard (no `aspire` CLI installed)
+dotnet run --project Backend          # app alone: https://localhost:7017 (needs a local Postgres)
 dotnet build                          # whole solution; also runs npm ci + vite build
-docker compose up --build             # both images; backend :8017, dashboard :8222
+docker compose up --build             # one image on :8017
 docker compose -f docker-compose.prod.yml up -d --build   # behind the host's tunnel
 ```
 
@@ -33,48 +36,42 @@ with plain `GetConnectionString("comments")` and no Aspire client integration, s
 `dotnet run --project Backend` alone falls back to the localhost default in
 `appsettings.json`.
 
-CSS **and the Alpine bundle** are built by MSBuild — `Dashboard.csproj` runs
-`npm ci` then `npm run build` before static assets are collected, so
-`dotnet build` alone is enough. Under AppHost, `npm run dev` (a
-`vite build --watch`, not a dev server) runs as a plain executable resource; a
-browser refresh picks up a rebuild.
+CSS is built by MSBuild — `Backend.csproj` runs `npm ci` then `npm run build`
+before static assets are collected, so `dotnet build` alone is enough. Node is
+only there for Tailwind; the console ships no application JavaScript. Under
+AppHost, `npm run dev` (a `vite build --watch`, not a dev server) runs as a plain
+executable resource; a browser refresh picks up a rebuild.
 
-The API needs `JWT_SIGNING_KEY` outside Development and `DASHBOARD_ORIGIN`
-always; `docker-compose.prod.yml` also needs `BACKEND_PUBLIC_URL`. See
-`.env.example`.
+See `.env.example` for the environment it reads.
 
 ## Solution-level notes
 
-**The Dashboard is a browser client of the API, exactly like a blog is.** Its
-server renders static HTML shells and nothing else — no `HttpClient`, no session,
-no idea who is signed in. Everything that touches the API is Alpine.js written
-**inline in the `x-data` on the element it drives** — no page has a `<script>`,
-and `Alpine.data()` is deliberately unused because nothing here is reused.
-`Styles/main.js` is the only `.js` file and does nothing but import the
-stylesheet and start Alpine. The admin's
-credential is a bearer token in their own browser's `localStorage`. The one thing
-the server still tells the browser is where the API is: `ApiBaseUrl` resolves it
-and `App.razor` writes it into `<meta name="komment-api">`.
+**One process, two audiences, two cookies.** A blog is a static site on another
+origin, so its readers carry `comments.session` — `SameSite=None; Secure`, which
+is what a third-party cookie has to be. An admin is on this origin, so the console
+carries `komment.admin` — `SameSite=Lax`, which also means it still works over
+plain HTTP under `docker compose up`. A path policy scheme in `Program.cs`
+forwards `/api/*` to the reader cookie and everything else to the admin cookie,
+so neither handler ever sees the other's. `AuthSchemes` names all three.
 
-That means **the API must let the console's origin through CORS** — it has no row
-in the `Sites` table, so it comes from `DASHBOARD_ORIGIN` — and that a blog and
-the console reach the API by different credentials: cookie for readers, bearer
-for admins. `Backend`'s `"smart"` policy scheme picks per request.
+**CORS is for blogs only.** `SiteOrigins.IsAllowed` reads the `Sites` table per
+preflight, so registering a blog is an "Add site" in the console (or a
+`POST /api/site`), not a redeploy. The console itself needs no entry — it is
+served from this origin.
 
-**Dashboard pages are static SSR shells, and there is no `blazor.web.js`.**
-Nothing is Blazor-interactive, and enhanced navigation would swap the DOM
-without a full page load, leaving Alpine to re-scan a tree it has already seen.
+**The service layer owns every authorization rule.** `SiteService`,
+`CommentService` and `AccountService` decide reader-vs-admin, per-owner site
+scoping, author-only edits, author-or-owner deletes and the `MULTI_TENANCY`
+gate. Endpoints and components both go through them and neither touches
+`AppDbContext`. This used to be enforced by the HTTP boundary between two apps;
+in one project it is a convention, so it matters more, not less.
 
-**Razor claims `@`, so Alpine's `@click` shorthand is spelled `x-on:click`
-throughout the Dashboard.** `:` bindings are unaffected. A bare `@` inside a
-`<script>` in a `.razor` file is a Razor transition and will not compile. Bind
-text with `x-text` — never assemble markup. See `Dashboard/CLAUDE.md`.
-
-**The API owns every authorization rule; the Dashboard only reports them.**
-Reader-vs-admin (`IsSiteAdmin`), the `MULTI_TENANCY` registration gate,
-per-owner site scoping — all decided by `Backend`. The Dashboard keeps no mirror
-of the API's validators; it surfaces API failures as messages rather than stack
-traces.
+**Console pages are `@rendermode InteractiveServer`, except the auth pages.**
+Components run in this process and call the services directly — no HTTP, no
+DTOs, no client-side JavaScript. `Login.razor` / `Register.razor` declare no
+render mode on purpose: a cookie can only be written during a real form POST,
+which an interactive circuit does not give you. Do not add a render mode to
+them, and do not remove it from the others.
 
 **No ServiceDefaults project.** The usual Aspire `AddServiceDefaults()`
 (OpenTelemetry, health checks, resilient HTTP) is deliberately absent. Adding it
@@ -87,33 +84,33 @@ absent and `docker-compose.yml` passes the same keys as real environment
 variables. Real environment variables win over `.env` either way.
 
 **Production is `docker-compose.prod.yml`, fronted by a Cloudflare Tunnel that
-lives on the server, not in this repo.** Both apps publish plain HTTP to
-`127.0.0.1` (backend `:8017`, dashboard `:8222`) and the host's `cloudflared`
-maps public hostnames onto those ports. Both run with
-`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` because the tunnel is a proxy — the
+lives on the server, not in this repo.** The app publishes plain HTTP to
+`127.0.0.1:8017` and the host's `cloudflared` maps one public hostname onto it —
+`/api/*` and the console are the same origin now. It runs with
+`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` because the tunnel is a proxy: the
 Google `redirect_uri` and the `Secure` cookie both depend on
-`X-Forwarded-Proto`. Postgres runs as a third service with its own volume,
-Backend migrates on boot behind a `service_healthy` gate, and both apps persist
-`DATAPROTECTION_KEYS` on the **Backend** so a restart does not sign every blog
-reader out — the Dashboard no longer needs it, having no cookie of its own.
-Admin tokens survive restarts as long as `JWT_SIGNING_KEY` is stable.
-`BACKEND_PUBLIC_URL` must be the tunnel's public API hostname, because the
-browser is what resolves it. The plain `docker-compose.yml` is the local-only
-version: no tunnel, so the `SameSite=None; Secure` reader cookie will not stick
-in a browser — the admin console still works, since a bearer token does not
-care.
+`X-Forwarded-Proto`. **The tunnel must pass WebSockets** — the console is
+interactive server rendering, so it needs a circuit. Postgres runs alongside
+with its own volume, the app migrates on boot behind a `service_healthy` gate,
+and `DATAPROTECTION_KEYS` persists to a volume: both cookies are encrypted with
+that keyring, so losing it signs out every reader and every admin at once. The
+plain `docker-compose.yml` is the local-only version: no tunnel, so the
+`SameSite=None; Secure` reader cookie will not stick in a browser — the console
+still works, because its cookie is `Lax`.
 
 **`ponytail:` comments mark deliberate shortcuts with their upgrade path.**
 Respect them; do not "fix" them without a measured reason.
 
-## Dashboard conventions
+## Console conventions
 
-- Tailwind utilities in markup, including inside Alpine `:class` bindings — it
-  all lives in `.razor` files, which is what `app.css` scans. `app.css` itself
-  holds only the `h1:focus` rule `<FocusOnNavigate>` forces and `[x-cloak]`.
-  Vite entry is `Styles/main.js`, output `wwwroot/dist` with stable filenames —
-  Blazor's `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
-- Prefer CSS-only interactions to Alpine for presentation (the sidebar toggle is
-  `peer-checked:`). Alpine is for data and identity. No scoped stylesheets.
+- Tailwind utilities in markup. `Styles/app.css` holds only what Blazor's own
+  class names (`.invalid`, `.validation-message`, `.blazor-error-boundary`)
+  force into CSS, plus the `h1:focus` rule `<FocusOnNavigate>` needs.
+  Vite entry is `Styles/main.js` — CSS only, there is no application JavaScript.
+  Output `wwwroot/dist` with stable filenames; Blazor's
+  `MapStaticAssets`/`@Assets[...]` does the fingerprinting.
+- Prefer CSS-only interactions where they work (the sidebar toggle is
+  `peer-checked:`). Destructive actions confirm inline with component state
+  rather than a JS `confirm()` — interactivity makes the safer version simpler.
 - `BareLayout` for unauthenticated full-screen pages, `MainLayout` for the
-  signed-in shell.
+  signed-in shell. `ReconnectModal` is the only scoped stylesheet.

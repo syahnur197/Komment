@@ -1,7 +1,17 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+
+# Backend.csproj shells out to npm for the Tailwind build, so the SDK image needs
+# node. ponytail: copied from the node image beats an apt/nodesource dance and
+# pins the version in one place.
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+
 WORKDIR /src
-COPY global.json Backend.csproj ./
-RUN dotnet restore
+COPY global.json Backend.csproj package.json package-lock.json ./
+# npm ci here so the layer caches; the NpmInstall target then sees node_modules
+# already up to date and skips.
+RUN dotnet restore && npm ci
 COPY . .
 RUN dotnet publish -c Release --no-restore -o /app
 
@@ -13,7 +23,5 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
-# ponytail: no migration step — run `dotnet ef database update` against the
-# mounted volume, or add db.Database.Migrate() at startup if that gets old.
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Backend.dll"]

@@ -1,0 +1,90 @@
+@page "/login"
+@layout BareLayout
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@inject AccountService Accounts
+@inject NavigationManager Nav
+
+<PageTitle>Sign in</PageTitle>
+
+<div class="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm">
+    <h1 class="text-xl font-semibold text-slate-900">Sign in</h1>
+    <p class="mt-1 text-sm text-slate-500">Komment site administration</p>
+
+    <EditForm Model="Input" OnValidSubmit="SignInAsync" FormName="login" class="mt-6 space-y-4">
+        <DataAnnotationsValidator />
+
+        @if (error is not null)
+        {
+            <p class="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">@error</p>
+        }
+
+        <div>
+            <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
+            <InputText id="username" @bind-Value="Input.Username" autocomplete="username" autofocus
+                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+            <ValidationMessage For="() => Input.Username" class="mt-1 block text-sm text-red-600" />
+        </div>
+
+        <div>
+            <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
+            <InputText id="password" type="password" @bind-Value="Input.Password" autocomplete="current-password"
+                       class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
+            <ValidationMessage For="() => Input.Password" class="mt-1 block text-sm text-red-600" />
+        </div>
+
+        <button type="submit" class="w-full rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800">
+            Sign in
+        </button>
+    </EditForm>
+
+    <a href="register" class="mt-4 block text-sm text-sky-700 hover:underline">Create an admin account</a>
+</div>
+
+@code {
+    // Static SSR on purpose: this component runs inside the real POST, which is
+    // the only place a cookie can be written. Do not give it a render mode.
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private LoginInput Input { get; set; } = default!;
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string? error;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private sealed class LoginInput
+    {
+        [Required] public string Username { get; set; } = "";
+        [Required] public string Password { get; set; } = "";
+    }
+
+    private async Task SignInAsync()
+    {
+        var user = await Accounts.VerifyPasswordAsync(Input.Username, Input.Password, HttpContext.RequestAborted);
+
+        // Same message either way, for the same reason the service gives the same
+        // answer either way: no account-enumeration oracle.
+        if (user is null)
+        {
+            error = "Invalid username or password.";
+            return;
+        }
+
+        // Readers sign in with Google and never reach this form, but an account
+        // can exist without being an admin. This is the admin console.
+        if (!user.IsSiteAdmin)
+        {
+            error = "This account cannot manage sites.";
+            return;
+        }
+
+        var identity = new ClaimsIdentity(UserClaims.For(user), AuthSchemes.Admin);
+        await HttpContext.SignInAsync(AuthSchemes.Admin, new ClaimsPrincipal(identity));
+
+        // Only ever bounce back into this app — ReturnUrl comes from the query string.
+        Nav.NavigateTo(ReturnUrl is not null && Uri.IsWellFormedUriString(ReturnUrl, UriKind.Relative)
+            ? ReturnUrl
+            : "/");
+    }
+}

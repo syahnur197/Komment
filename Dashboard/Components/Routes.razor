@@ -1,9 +1,0 @@
-@* RouteView, not AuthorizeRouteView: authorisation is the API's, and this app no
-   longer has an identity to route on. Each page checks for a token in the
-   browser and redirects itself. *@
-<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
-    <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
-    </Found>
-</Router>

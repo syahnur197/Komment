@@ -3,7 +3,6 @@ using Backend.Features.Sites;
 using Backend.Services;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Backend.Features.Auth;
 
@@ -47,7 +46,7 @@ public sealed class CallbackEndpoint : Endpoint<CallbackRequest>
         if (user.IsSiteAdmin)
             identity.AddClaim(new Claim(ClaimTypes.Role, UserClaims.SiteAdminRole));
 
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+        await HttpContext.SignInAsync(AuthSchemes.Reader, new ClaimsPrincipal(identity));
 
         var site = await Sites.FindBySlugAsync(req.Site, ct);
 

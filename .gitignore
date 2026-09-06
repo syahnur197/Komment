@@ -485,4 +485,4 @@ $RECYCLE.BIN/
 
 # Dashboard frontend build (Vite + Tailwind)
 node_modules/
-Dashboard/wwwroot/dist/
+Backend/wwwroot/dist/

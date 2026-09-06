@@ -1,6 +1,5 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Backend.Features.Auth;
 
@@ -14,7 +13,7 @@ public sealed class LogoutEndpoint : EndpointWithoutRequest
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignOutAsync(AuthSchemes.Reader);
         await Send.NoContentAsync(ct);
     }
 }
