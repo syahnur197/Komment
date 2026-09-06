@@ -105,6 +105,16 @@ present; everything else keeps working without them. The console deliberately
 does *not* use this cookie — a third-party cookie is what Safari blocks and
 Firefox partitions, and the console has no need to be third-party.
 
+**Rate limiting is `/api/*` only.** `AddRateLimiter` with a `GlobalLimiter`
+whose partition is the user id when signed in and the remote IP otherwise — which
+is why `UseRateLimiter` sits *after* `UseAuthentication`. Fixed window,
+`RATE_LIMIT_PER_MINUTE` (default 30). The console partition is
+`GetNoLimiter`: a circuit is one connection, not a request per interaction.
+`OnRejected` sets 429 plus `Retry-After`, because a blog's `fetch` needs a status
+code, not an error page. The count is in-process, so it resets on deploy and a
+second replica would double the real limit — a `ponytail:` comment names that
+ceiling.
+
 **Comment threading is flat on the wire.** `ParentCommentId` self-reference with
 cascade delete; `GetAllComments` returns an ordered flat list and the blog nests
 client-side. Timestamps are set centrally by `AppDbContext.SaveChanges*` for any

@@ -29,6 +29,13 @@ docker compose -f docker-compose.prod.yml up -d --build   # behind the host's tu
 EF Core migrations are Backend-only and must run from that directory
 (`cd Backend && dotnet ef migrations add <Name>`). There is no test project.
 
+**Rate limiting covers `/api/*` only, in memory.** ASP.NET's own
+`AddRateLimiter` with a fixed window of `RATE_LIMIT_PER_MINUTE` (default 30) per
+caller — user id when signed in, remote IP otherwise. The console is deliberately
+outside it: a Blazor circuit is one connection, not a request per click. No Redis
+and no extra container — the count is per process, which is exactly right for the
+one container this deploys as.
+
 Postgres comes from whichever host is running: `AddPostgres("postgres")` in
 AppHost starts a container and injects `ConnectionStrings__comments`; the compose
 files build the same connection string from `POSTGRES_PASSWORD`. Backend reads it

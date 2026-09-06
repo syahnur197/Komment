@@ -5,11 +5,13 @@ using Backend.Features.Sites;
 using Backend.Services;
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
-using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 
 // ponytail: .env -> env vars in a few lines. Swap in DotNetEnv if we ever need
 // quoting, escapes or multi-line values. Must run before CreateBuilder so the
@@ -22,12 +24,14 @@ var envFile = new[] { ".env", "../.env" }.FirstOrDefault(File.Exists);
 foreach (var line in envFile is null ? [] : File.ReadAllLines(envFile))
 {
     var trimmed = line.Trim();
+
     if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
-    var split = trimmed.Split('=', 2);
+    if (trimmed.Split('=', 2) is not [var name, var value]) continue;
+
     // A real environment variable wins — .env is the local-dev fallback, not an
     // override of whatever the host set.
-    if (split.Length == 2 && Environment.GetEnvironmentVariable(split[0].Trim()) is null)
-        Environment.SetEnvironmentVariable(split[0].Trim(), split[1].Trim());
+    if (Environment.GetEnvironmentVariable(name.Trim()) is null)
+        Environment.SetEnvironmentVariable(name.Trim(), value.Trim());
 }
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,16 +59,17 @@ builder.Services.AddScoped<AccountService>();
 
 // Blogs are static sites on other origins, so the reader's session cookie is
 // cross-site: SameSite=None + Secure, and CORS must allow credentials. The
-// allowed origins are the registered sites, resolved per request — assigned
-// after Build() below because the policy is declared before the provider exists.
-// The console needs no CORS entry at all now: it is served from this origin.
-IServiceProvider? services = null;
-
-builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
-    .SetIsOriginAllowed(origin => SiteOrigins.IsAllowed(services!, origin))
-    .AllowAnyHeader()
-    .AllowAnyMethod()
-    .AllowCredentials()));
+// allowed origins are the registered sites, read per preflight — which needs a
+// service provider, so the policy is configured through the options pipeline
+// rather than inline: that hands us one instead of capturing it after Build().
+// The console needs no CORS entry at all: it is served from this origin.
+builder.Services.AddCors();
+builder.Services.AddOptions<CorsOptions>().Configure<IServiceProvider>((corsOptions, services) =>
+    corsOptions.AddDefaultPolicy(policy => policy
+        .SetIsOriginAllowed(origin => SiteOrigins.IsAllowed(services, origin))
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()));
 
 // Missing credentials must not take the whole app down — reads and Swagger still
 // work, only the reader sign-in flow is unavailable (LoginEndpoint says so).
@@ -72,60 +77,99 @@ var googleClientId = builder.Configuration["GOOGLE_CLIENT_ID"];
 var googleClientSecret = builder.Configuration["GOOGLE_CLIENT_SECRET"];
 
 var authBuilder = builder.Services
-    .AddAuthentication(o =>
+    .AddAuthentication(options =>
     {
         // Two audiences in one app, so two cookies. A path policy scheme picks:
         // anything under /api is a blog talking to the API, everything else is
         // the console. Neither handler ever sees the other's cookie.
-        o.DefaultScheme = AuthSchemes.ByPath;
+        options.DefaultScheme = AuthSchemes.ByPath;
         // A policy scheme cannot receive a sign-in, and the Google handler needs
         // somewhere real to write its cookie — so name the reader scheme here.
-        o.DefaultSignInScheme = AuthSchemes.Reader;
+        options.DefaultSignInScheme = AuthSchemes.Reader;
     })
-    .AddPolicyScheme(AuthSchemes.ByPath, "Reader or admin", o =>
-        o.ForwardDefaultSelector = ctx =>
-            ctx.Request.Path.StartsWithSegments("/api") ? AuthSchemes.Reader : AuthSchemes.Admin)
-    .AddCookie(AuthSchemes.Reader, o =>
+    .AddPolicyScheme(AuthSchemes.ByPath, "Reader or admin", options =>
+        options.ForwardDefaultSelector = httpContext =>
+            httpContext.Request.Path.StartsWithSegments("/api") ? AuthSchemes.Reader : AuthSchemes.Admin)
+    .AddCookie(AuthSchemes.Reader, options =>
     {
-        o.Cookie.Name = "comments.session";
+        options.Cookie.Name = "comments.session";
         // The blog is a different origin, so this cookie is third-party by
         // definition. Secure is not optional once SameSite is None.
-        o.Cookie.SameSite = SameSiteMode.None;
-        o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        o.ExpireTimeSpan = TimeSpan.FromDays(30);
-        o.SlidingExpiration = true;
+        options.Cookie.SameSite = SameSiteMode.None;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.SlidingExpiration = true;
         // An API, not a site: an unauthenticated call gets a status code, not a
         // redirect to a login page that does not exist.
-        o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
-        o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
+        options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
+        options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
     })
-    .AddCookie(AuthSchemes.Admin, o =>
+    .AddCookie(AuthSchemes.Admin, options =>
     {
-        o.Cookie.Name = "komment.admin";
+        options.Cookie.Name = "komment.admin";
         // Same-origin, so Lax works — and unlike the reader cookie this one still
         // sticks over plain HTTP, which is what `docker compose up` serves.
-        o.Cookie.SameSite = SameSiteMode.Lax;
-        o.LoginPath = "/login";
-        o.AccessDeniedPath = "/login";
-        o.ExpireTimeSpan = TimeSpan.FromDays(30);
-        o.SlidingExpiration = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/login";
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.SlidingExpiration = true;
     });
 
 if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
 {
-    authBuilder.AddGoogle(o =>
+    authBuilder.AddGoogle(options =>
     {
-        o.ClientId = googleClientId;
-        o.ClientSecret = googleClientSecret;
+        options.ClientId = googleClientId;
+        options.ClientSecret = googleClientSecret;
         // Handled by the Google handler itself — this is the URI Google redirects
         // back to and the one registered in the Google Cloud console.
-        o.CallbackPath = "/signin-google";
-        o.SignInScheme = AuthSchemes.Reader;
-        o.ClaimActions.MapJsonKey("picture", "picture");
+        options.CallbackPath = "/signin-google";
+        options.SignInScheme = AuthSchemes.Reader;
+        options.ClaimActions.MapJsonKey("picture", "picture");
     });
 }
 
 builder.Services.AddAuthorization();
+
+// Fixed window on the API only — the console is a Blazor circuit, not a request
+// per interaction, and throttling it would break the UI. Keyed by user when
+// signed in so one office NAT is not one bucket, which is why UseRateLimiter
+// below sits after UseAuthentication.
+// ponytail: the built-in limiter counts in this process, so the window resets on
+// deploy and a second replica doubles the real limit. One container, so that is
+// the right trade — move the counter to Redis if this ever scales out.
+var rateLimitPerMinute = builder.Configuration.GetValue("RATE_LIMIT_PER_MINUTE", 30);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        if (!httpContext.Request.Path.StartsWithSegments("/api"))
+            return RateLimitPartition.GetNoLimiter("console");
+
+        var caller = UserClaims.UserIdOf(httpContext.User)?.ToString()
+                     ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                     ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(caller, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rateLimitPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+        });
+    });
+
+    // A blog's fetch gets a status code and a hint, never an error page.
+    options.OnRejected = (rejectedContext, _) =>
+    {
+        rejectedContext.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        if (rejectedContext.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            rejectedContext.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+
+        return ValueTask.CompletedTask;
+    };
+});
 
 // Both cookies are encrypted with these keys, so a per-process keyring means
 // every restart signs everyone out. Only set in Docker — locally the default
@@ -134,7 +178,6 @@ if (builder.Configuration["DATAPROTECTION_KEYS"] is { Length: > 0 } keyPath)
     builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyPath));
 
 var app = builder.Build();
-services = app.Services;
 
 // ponytail: migrate on boot so a fresh volume is a working install. Fine for one
 // instance; two starting at once would race — move to a one-shot job if this ever
@@ -147,7 +190,7 @@ using (var scope = app.Services.CreateScope())
 // neither wrapper is applied to it.
 var isDevelopment = app.Environment.IsDevelopment();
 
-app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api"), console =>
+app.UseWhen(httpContext => !httpContext.Request.Path.StartsWithSegments("/api"), console =>
 {
     if (!isDevelopment) console.UseExceptionHandler("/Error", createScopeForErrors: true);
 
@@ -160,21 +203,16 @@ app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.UseFastEndpoints();
 
-if (isDevelopment)
-{
-    app.UseSwaggerGen();
-}
+if (isDevelopment) app.UseSwaggerGen();
 
-// ponytail: dropping the admin cookie is enough — signing out of the console does
-// not touch a reader's Google session, which is a separate cookie and a separate
-// identity even for the same person.
-app.MapPost("/logout", async (HttpContext ctx) =>
+app.MapPost("/logout", async (HttpContext httpContext) =>
 {
-    await ctx.SignOutAsync(AuthSchemes.Admin);
+    await httpContext.SignOutAsync(AuthSchemes.Admin);
     return Results.Redirect("/");
 });
 

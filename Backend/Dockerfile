@@ -23,5 +23,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
+
+# DATAPROTECTION_KEYS mounts a named volume here in prod. Docker copies this
+# directory's ownership onto an empty volume, so it must exist and belong to app
+# before the switch below — otherwise the keyring is unwritable and every reader
+# and admin is signed out on each restart.
+RUN mkdir -p /keys && chown app:app /keys
+
+# The image ships an unprivileged `app` user but does not select it. Nothing here
+# needs root: the port is 8080, and /app is only ever read.
+USER app
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Backend.dll"]
