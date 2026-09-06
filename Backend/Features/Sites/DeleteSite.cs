@@ -10,9 +10,9 @@ public sealed class DeleteSiteRequest
 }
 
 // Takes every comment on that site with it (required FK, so EF cascades).
-public sealed class DeleteSiteEndpoint : Endpoint<DeleteSiteRequest>
+public sealed class DeleteSiteEndpoint(SiteService siteService) : Endpoint<DeleteSiteRequest>
 {
-    public SiteService Sites { get; set; } = default!;
+    private readonly SiteService _siteService = siteService;
 
     public override void Configure()
     {
@@ -22,7 +22,7 @@ public sealed class DeleteSiteEndpoint : Endpoint<DeleteSiteRequest>
 
     public override async Task HandleAsync(DeleteSiteRequest req, CancellationToken ct)
     {
-        var result = await Sites.DeleteAsync(req.Id, UserClaims.UserIdOf(User)!.Value, ct);
+        var result = await _siteService.DeleteAsync(req.Id, UserClaims.UserIdOf(User)!.Value, ct);
 
         if (!result.IsOk)
         {

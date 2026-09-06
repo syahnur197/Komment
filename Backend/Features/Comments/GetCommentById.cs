@@ -8,9 +8,9 @@ public sealed class GetCommentByIdRequest
     public Guid Id { get; set; }
 }
 
-public sealed class GetCommentByIdEndpoint : Endpoint<GetCommentByIdRequest, CommentResponse>
+public sealed class GetCommentByIdEndpoint(CommentService commentService) : Endpoint<GetCommentByIdRequest, CommentResponse>
 {
-    public CommentService Comments { get; set; } = default!;
+    private readonly CommentService _commentService = commentService;
 
     public override void Configure()
     {
@@ -21,7 +21,7 @@ public sealed class GetCommentByIdEndpoint : Endpoint<GetCommentByIdRequest, Com
 
     public override async Task HandleAsync(GetCommentByIdRequest req, CancellationToken ct)
     {
-        var result = await Comments.GetAsync(req.Id, ct);
+        var result = await _commentService.GetAsync(req.Id, ct);
 
         if (!result.IsOk)
         {

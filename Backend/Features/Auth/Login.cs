@@ -14,9 +14,9 @@ public sealed class LoginRequest
 
 // Kicks off the OAuth dance. The Google handler owns the token exchange and
 // redirects back to /api/auth/callback once the cookie is signed in.
-public sealed class LoginEndpoint : Endpoint<LoginRequest>
+public sealed class LoginEndpoint(IAuthenticationSchemeProvider authenticationSchemeProvider) : Endpoint<LoginRequest>
 {
-    public IAuthenticationSchemeProvider Schemes { get; set; } = default!;
+    private readonly IAuthenticationSchemeProvider _authenticationSchemeProvider = authenticationSchemeProvider;
 
     public override void Configure()
     {
@@ -27,7 +27,7 @@ public sealed class LoginEndpoint : Endpoint<LoginRequest>
     public override async Task HandleAsync(LoginRequest req, CancellationToken ct)
     {
         // The Google handler is only registered when its credentials are set.
-        if (await Schemes.GetSchemeAsync(GoogleDefaults.AuthenticationScheme) is null)
+        if (await _authenticationSchemeProvider.GetSchemeAsync(GoogleDefaults.AuthenticationScheme) is null)
         {
             await Send.ResultAsync(Results.Problem(
                 "Google sign-in is not configured on this server.", statusCode: 503));

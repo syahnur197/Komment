@@ -38,9 +38,9 @@ public sealed class CreateSiteValidator : Validator<CreateSiteRequest>
                       uri.GetLeftPart(UriPartial.Authority).Equals(o, StringComparison.OrdinalIgnoreCase));
 }
 
-public sealed class CreateSiteEndpoint : Endpoint<CreateSiteRequest, SiteResponse>
+public sealed class CreateSiteEndpoint(SiteService siteService) : Endpoint<CreateSiteRequest, SiteResponse>
 {
-    public SiteService Sites { get; set; } = default!;
+    private readonly SiteService _siteService = siteService;
 
     public override void Configure()
     {
@@ -50,7 +50,7 @@ public sealed class CreateSiteEndpoint : Endpoint<CreateSiteRequest, SiteRespons
 
     public override async Task HandleAsync(CreateSiteRequest req, CancellationToken ct)
     {
-        var result = await Sites.CreateAsync(
+        var result = await _siteService.CreateAsync(
             UserClaims.UserIdOf(User)!.Value, req.Slug, req.Name, req.Origins, ct);
 
         if (!result.IsOk)

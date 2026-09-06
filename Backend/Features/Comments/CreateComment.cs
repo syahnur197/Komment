@@ -29,9 +29,9 @@ public sealed class CreateCommentValidator : Validator<CreateCommentRequest>
     }
 }
 
-public sealed class CreateCommentEndpoint : Endpoint<CreateCommentRequest, CommentResponse>
+public sealed class CreateCommentEndpoint(CommentService commentService) : Endpoint<CreateCommentRequest, CommentResponse>
 {
-    public CommentService Comments { get; set; } = default!;
+    private readonly CommentService _commentService = commentService;
 
     public override void Configure()
     {
@@ -41,7 +41,7 @@ public sealed class CreateCommentEndpoint : Endpoint<CreateCommentRequest, Comme
 
     public override async Task HandleAsync(CreateCommentRequest req, CancellationToken ct)
     {
-        var result = await Comments.CreateAsync(
+        var result = await _commentService.CreateAsync(
             UserClaims.UserIdOf(User)!.Value, req.Site, req.PostSlug, req.Body, req.ParentCommentId, ct);
 
         if (!result.IsOk)

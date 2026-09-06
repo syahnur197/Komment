@@ -9,9 +9,9 @@ public sealed class GetSiteByIdRequest
     public Guid Id { get; set; }
 }
 
-public sealed class GetSiteByIdEndpoint : Endpoint<GetSiteByIdRequest, SiteResponse>
+public sealed class GetSiteByIdEndpoint(SiteService siteService) : Endpoint<GetSiteByIdRequest, SiteResponse>
 {
-    public SiteService Sites { get; set; } = default!;
+    private readonly SiteService _siteService = siteService;
 
     public override void Configure()
     {
@@ -21,7 +21,7 @@ public sealed class GetSiteByIdEndpoint : Endpoint<GetSiteByIdRequest, SiteRespo
 
     public override async Task HandleAsync(GetSiteByIdRequest req, CancellationToken ct)
     {
-        var result = await Sites.GetAsync(req.Id, UserClaims.UserIdOf(User)!.Value, ct);
+        var result = await _siteService.GetAsync(req.Id, UserClaims.UserIdOf(User)!.Value, ct);
 
         if (!result.IsOk)
         {

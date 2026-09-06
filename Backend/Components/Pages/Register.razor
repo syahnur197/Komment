@@ -1,7 +1,7 @@
 @page "/register"
 @layout BareLayout
 @using System.ComponentModel.DataAnnotations
-@inject AccountService Accounts
+@inject AccountService _accountService
 @inject NavigationManager Nav
 
 <PageTitle>Create an admin account</PageTitle>
@@ -92,7 +92,7 @@
 
     private async Task RegisterAsync()
     {
-        var result = await Accounts.RegisterAsync(Input.Username, Input.Email, Input.Name, Input.Password, default);
+        var result = await _accountService.RegisterAsync(Input.Username, Input.Email, Input.Name, Input.Password, default);
 
         switch (result.Kind)
         {

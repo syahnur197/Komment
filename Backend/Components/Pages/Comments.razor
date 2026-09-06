@@ -1,8 +1,8 @@
 @page "/sites/{Id:guid}/comments"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject SiteService Sites
-@inject CommentService Comments
+@inject SiteService _siteService
+@inject CommentService _commentService
 
 <PageTitle>@(site is null ? "Comments" : $"Comments — {site.Name}")</PageTitle>
 
@@ -117,7 +117,7 @@ else
     {
         // Owner-scoped, so this is both the authorisation check and the source of
         // the slug — comments are keyed by site slug, not by site id.
-        var result = await Sites.GetAsync(Id, userId, default);
+        var result = await _siteService.GetAsync(Id, userId, default);
 
         if (!result.IsOk)
         {
@@ -126,7 +126,7 @@ else
         }
 
         site = result.Value;
-        comments = await Comments.ListAsync(site!.Slug, null, default);
+        comments = await _commentService.ListAsync(site!.Slug, null, default);
     }
 
     private async Task DeleteAsync(Guid commentId)
@@ -134,7 +134,7 @@ else
         pendingDelete = null;
 
         // Moderation: the service allows it for the author or the site's owner.
-        var result = await Comments.DeleteAsync(commentId, userId, isSiteAdmin: true, default);
+        var result = await _commentService.DeleteAsync(commentId, userId, isSiteAdmin: true, default);
 
         if (!result.IsOk && result.Kind is not ResultKind.NotFound)
             error = "Could not delete that comment.";

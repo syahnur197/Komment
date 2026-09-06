@@ -55,8 +55,22 @@ an endpoint means adding a file, nothing else.
 `AllowAnonymous()`; `SiteGroup` (`/api/site`) requires the `site-admin` role on
 every endpoint. Auth endpoints are ungrouped and declare full paths.
 
-**Dependencies come in by property injection** (`public AppDbContext Db { get; set; } = default!;`),
-not constructors.
+**Dependencies come in through the primary constructor**, kept in a
+`private readonly` field named after the type:
+
+```csharp
+public sealed class GetAllSitesEndpoint(SiteService siteService) : EndpointWithoutRequest<List<SiteResponse>>
+{
+    private readonly SiteService _siteService = siteService;
+```
+
+FastEndpoints also supports property injection (`public SiteService Sites { get; set; } = default!;`)
+— don't. Same names in the console: `@inject SiteService _siteService`. Nothing
+injected is public, and nothing is addressed by a nickname: the field is the type
+in camelCase with a leading underscore, so the call site says which service it is.
+(`@inject NavigationManager Nav` is the one holdover.) Framework-supplied
+component members are private too — `[CascadingParameter] private`,
+`[SupplyParameterFromQuery] private`.
 
 **Sites are tenants and also the CORS allowlist.** `SiteOrigins.IsAllowed` reads
 the `Sites` table per preflight, so registering a blog is `POST /api/site` rather
@@ -79,7 +93,9 @@ plain HTTP that `docker compose up` serves. A policy scheme forwards `/api/*` to
 the reader and everything else to the admin. Two traps live here:
 `DefaultSignInScheme` must name a real scheme (a policy scheme cannot receive the
 Google handler's sign-in), and `SiteGroup` names `AuthSchemes.Admin` explicitly
-because it sits under `/api` but is an admin operation.
+because it sits under `/api` but is an admin operation. A third one is the
+compiler's: inside an `Endpoint<>`, `AuthSchemes` is the base class's method, so
+the static class needs its full name — `Backend.Features.Auth.AuthSchemes.Reader`.
 
 **Cookie config is deliberate and load-bearing:** `SameSite=None` + `Secure`
 because the blog is cross-origin, and `OnRedirectToLogin`/`AccessDenied` are
@@ -115,7 +131,7 @@ client-side. Timestamps are set centrally by `AppDbContext.SaveChanges*` for any
 ## The console
 
 **Every page is `@rendermode InteractiveServer` except `Login` and `Register`.**
-Components run in this process and `@inject SiteService` / `CommentService`
+Components run in this process and inject `SiteService` / `CommentService`
 directly — no HTTP, no DTO layer, no client-side JavaScript. The auth pages
 declare no render mode on purpose: a cookie can only be written during a real
 form POST, which an interactive circuit does not give you. Do not add a render

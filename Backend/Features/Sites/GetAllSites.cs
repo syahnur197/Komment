@@ -6,9 +6,9 @@ namespace Backend.Features.Sites;
 
 // Your sites, not everyone's — the list doubles as the CORS allowlist, so it
 // stays private.
-public sealed class GetAllSitesEndpoint : EndpointWithoutRequest<List<SiteResponse>>
+public sealed class GetAllSitesEndpoint(SiteService siteService) : EndpointWithoutRequest<List<SiteResponse>>
 {
-    public SiteService Sites { get; set; } = default!;
+    private readonly SiteService _siteService = siteService;
 
     public override void Configure()
     {
@@ -17,5 +17,5 @@ public sealed class GetAllSitesEndpoint : EndpointWithoutRequest<List<SiteRespon
     }
 
     public override async Task HandleAsync(CancellationToken ct) =>
-        await Send.OkAsync(await Sites.ListAsync(UserClaims.UserIdOf(User)!.Value, ct), ct);
+        await Send.OkAsync(await _siteService.ListAsync(UserClaims.UserIdOf(User)!.Value, ct), ct);
 }

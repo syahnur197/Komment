@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @using System.ComponentModel.DataAnnotations
-@inject SiteService Sites
+@inject SiteService _siteService
 @inject NavigationManager Nav
 
 <PageTitle>@(IsNew ? "Add site" : "Edit site")</PageTitle>
@@ -108,7 +108,7 @@
             return;
         }
 
-        var result = await Sites.GetAsync(Id!.Value, ownerId, default);
+        var result = await _siteService.GetAsync(Id!.Value, ownerId, default);
 
         if (!result.IsOk)
         {
@@ -135,8 +135,8 @@
             .Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         var result = IsNew
-            ? await Sites.CreateAsync(ownerId, input.Slug, input.Name, origins, default)
-            : await Sites.UpdateAsync(Id!.Value, ownerId, input.Name, origins, default);
+            ? await _siteService.CreateAsync(ownerId, input.Slug, input.Name, origins, default)
+            : await _siteService.UpdateAsync(Id!.Value, ownerId, input.Name, origins, default);
 
         busy = false;
 

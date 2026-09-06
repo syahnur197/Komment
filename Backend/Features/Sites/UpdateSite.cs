@@ -22,9 +22,9 @@ public sealed class UpdateSiteValidator : Validator<UpdateSiteRequest>
     }
 }
 
-public sealed class UpdateSiteEndpoint : Endpoint<UpdateSiteRequest, SiteResponse>
+public sealed class UpdateSiteEndpoint(SiteService siteService) : Endpoint<UpdateSiteRequest, SiteResponse>
 {
-    public SiteService Sites { get; set; } = default!;
+    private readonly SiteService _siteService = siteService;
 
     public override void Configure()
     {
@@ -34,7 +34,7 @@ public sealed class UpdateSiteEndpoint : Endpoint<UpdateSiteRequest, SiteRespons
 
     public override async Task HandleAsync(UpdateSiteRequest req, CancellationToken ct)
     {
-        var result = await Sites.UpdateAsync(
+        var result = await _siteService.UpdateAsync(
             req.Id, UserClaims.UserIdOf(User)!.Value, req.Name, req.Origins, ct);
 
         if (!result.IsOk)

@@ -10,9 +10,9 @@ public sealed class DeleteCommentRequest
 }
 
 // Endpoint<TRequest> — a request, no response body.
-public sealed class DeleteCommentEndpoint : Endpoint<DeleteCommentRequest>
+public sealed class DeleteCommentEndpoint(CommentService commentService) : Endpoint<DeleteCommentRequest>
 {
-    public CommentService Comments { get; set; } = default!;
+    private readonly CommentService _commentService = commentService;
 
     public override void Configure()
     {
@@ -22,7 +22,7 @@ public sealed class DeleteCommentEndpoint : Endpoint<DeleteCommentRequest>
 
     public override async Task HandleAsync(DeleteCommentRequest req, CancellationToken ct)
     {
-        var result = await Comments.DeleteAsync(
+        var result = await _commentService.DeleteAsync(
             req.Id, UserClaims.UserIdOf(User)!.Value, UserClaims.IsSiteAdmin(User), ct);
 
         switch (result.Kind)

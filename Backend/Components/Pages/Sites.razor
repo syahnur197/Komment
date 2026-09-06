@@ -1,7 +1,7 @@
 @page "/sites"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject SiteService Sites
+@inject SiteService _siteService
 
 <PageTitle>Sites</PageTitle>
 
@@ -90,7 +90,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         ownerId = UserClaims.UserIdOf((await AuthState).User)!.Value;
-        sites = await Sites.ListAsync(ownerId, default);
+        sites = await _siteService.ListAsync(ownerId, default);
     }
 
     private async Task DeleteAsync(Guid siteId)
@@ -99,11 +99,11 @@ else
 
         // Already gone, or never yours — either way the reloaded list is the
         // answer, so only an unexpected outcome is worth saying.
-        var result = await Sites.DeleteAsync(siteId, ownerId, default);
+        var result = await _siteService.DeleteAsync(siteId, ownerId, default);
 
         if (!result.IsOk && result.Kind is not ResultKind.NotFound)
             error = "Could not delete that site.";
 
-        sites = await Sites.ListAsync(ownerId, default);
+        sites = await _siteService.ListAsync(ownerId, default);
     }
 }

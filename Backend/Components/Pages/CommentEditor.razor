@@ -2,8 +2,8 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @using System.ComponentModel.DataAnnotations
-@inject SiteService Sites
-@inject CommentService Comments
+@inject SiteService _siteService
+@inject CommentService _commentService
 @inject NavigationManager Nav
 
 <PageTitle>@Title</PageTitle>
@@ -60,7 +60,7 @@
 
     // One route, two jobs: edit this comment, or reply to it. A query flag keeps
     // it to a single component rather than two near-identical pages.
-    [SupplyParameterFromQuery] public bool Reply { get; set; }
+    [SupplyParameterFromQuery] private bool Reply { get; set; }
 
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
@@ -84,7 +84,7 @@
         userId = UserClaims.UserIdOf((await AuthState).User)!.Value;
 
         // Owner-scoped, so it doubles as the check that this site is yours.
-        var siteResult = await Sites.GetAsync(SiteId, userId, default);
+        var siteResult = await _siteService.GetAsync(SiteId, userId, default);
 
         if (!siteResult.IsOk)
         {
@@ -94,7 +94,7 @@
 
         siteSlug = siteResult.Value!.Slug;
 
-        var commentResult = await Comments.GetAsync(Id, default);
+        var commentResult = await _commentService.GetAsync(Id, default);
 
         if (!commentResult.IsOk)
         {
@@ -121,8 +121,8 @@
         error = null;
 
         var result = Reply
-            ? await Comments.CreateAsync(userId, siteSlug!, target!.PostSlug, input!.Body, Id, default)
-            : await Comments.UpdateAsync(Id, userId, input!.Body, default);
+            ? await _commentService.CreateAsync(userId, siteSlug!, target!.PostSlug, input!.Body, Id, default)
+            : await _commentService.UpdateAsync(Id, userId, input!.Body, default);
 
         busy = false;
 

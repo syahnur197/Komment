@@ -29,9 +29,9 @@ public sealed class RegisterValidator : Validator<RegisterRequest>
 
 // Creates a site admin. Whether this is open to anyone is AccountService's call
 // (MULTI_TENANCY); this only turns the answer into a status code.
-public sealed class RegisterEndpoint : Endpoint<RegisterRequest>
+public sealed class RegisterEndpoint(AccountService accountService) : Endpoint<RegisterRequest>
 {
-    public AccountService Accounts { get; set; } = default!;
+    private readonly AccountService _accountService = accountService;
 
     public override void Configure()
     {
@@ -41,7 +41,7 @@ public sealed class RegisterEndpoint : Endpoint<RegisterRequest>
 
     public override async Task HandleAsync(RegisterRequest req, CancellationToken ct)
     {
-        var result = await Accounts.RegisterAsync(req.Username, req.Email, req.Name, req.Password, ct);
+        var result = await _accountService.RegisterAsync(req.Username, req.Email, req.Name, req.Password, ct);
 
         switch (result.Kind)
         {

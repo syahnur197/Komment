@@ -21,9 +21,9 @@ public sealed class UpdateCommentValidator : Validator<UpdateCommentRequest>
     }
 }
 
-public sealed class UpdateCommentEndpoint : Endpoint<UpdateCommentRequest, CommentResponse>
+public sealed class UpdateCommentEndpoint(CommentService commentService) : Endpoint<UpdateCommentRequest, CommentResponse>
 {
-    public CommentService Comments { get; set; } = default!;
+    private readonly CommentService _commentService = commentService;
 
     public override void Configure()
     {
@@ -33,7 +33,7 @@ public sealed class UpdateCommentEndpoint : Endpoint<UpdateCommentRequest, Comme
 
     public override async Task HandleAsync(UpdateCommentRequest req, CancellationToken ct)
     {
-        var result = await Comments.UpdateAsync(req.Id, UserClaims.UserIdOf(User)!.Value, req.Body, ct);
+        var result = await _commentService.UpdateAsync(req.Id, UserClaims.UserIdOf(User)!.Value, req.Body, ct);
 
         switch (result.Kind)
         {

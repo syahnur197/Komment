@@ -20,11 +20,9 @@ public sealed class GetAllCommentsValidator : Validator<GetAllCommentsRequest>
 
 // One class per endpoint (the REPR pattern: Request-Endpoint-Response). The
 // endpoint binds and maps; CommentService decides.
-public sealed class GetAllCommentsEndpoint : Endpoint<GetAllCommentsRequest, List<CommentResponse>>
+public sealed class GetAllCommentsEndpoint(CommentService commentService) : Endpoint<GetAllCommentsRequest, List<CommentResponse>>
 {
-    // Property injection — FastEndpoints fills this from the request scope.
-    // No constructor, so adding a dependency is a one-line change.
-    public CommentService Comments { get; set; } = default!;
+    private readonly CommentService _commentService = commentService;
 
     public override void Configure()
     {
@@ -34,5 +32,5 @@ public sealed class GetAllCommentsEndpoint : Endpoint<GetAllCommentsRequest, Lis
     }
 
     public override async Task HandleAsync(GetAllCommentsRequest req, CancellationToken ct) =>
-        await Send.OkAsync(await Comments.ListAsync(req.Site, req.PostSlug, ct), ct);
+        await Send.OkAsync(await _commentService.ListAsync(req.Site, req.PostSlug, ct), ct);
 }

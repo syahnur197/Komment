@@ -13,7 +13,7 @@ public sealed class LogoutEndpoint : EndpointWithoutRequest
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await HttpContext.SignOutAsync(AuthSchemes.Reader);
+        await HttpContext.SignOutAsync(Backend.Features.Auth.AuthSchemes.Reader);
         await Send.NoContentAsync(ct);
     }
 }
