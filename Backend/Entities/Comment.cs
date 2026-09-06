@@ -13,6 +13,9 @@ public class Comment : ITimestamped
     [MaxLength(300)]
     public required string PostSlug { get; set; }
 
+    [MaxLength(2000)]
+    public string? PostUrl { get; set; }
+
     [MaxLength(4000)]
     public required string Body { get; set; }
 

@@ -10,6 +10,7 @@ public sealed class CreateCommentRequest
 {
     public string Site { get; set; } = default!;
     public string PostSlug { get; set; } = default!;
+    public string? PostUrl { get; set; }
     public string Body { get; set; } = default!;
 
     // Omit for a top-level comment; set it to reply to an existing one.
@@ -25,6 +26,7 @@ public sealed class CreateCommentValidator : Validator<CreateCommentRequest>
     {
         RuleFor(x => x.Site).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PostSlug).NotEmpty().MaximumLength(300);
+        RuleFor(x => x.PostUrl).MaximumLength(2000).When(x => x.PostUrl is not null);
         RuleFor(x => x.Body).NotEmpty().MaximumLength(4000);
     }
 }
@@ -42,7 +44,7 @@ public sealed class CreateCommentEndpoint(CommentService commentService) : Endpo
     public override async Task HandleAsync(CreateCommentRequest req, CancellationToken ct)
     {
         var result = await _commentService.CreateAsync(
-            UserClaims.UserIdOf(User)!.Value, req.Site, req.PostSlug, req.Body, req.ParentCommentId, ct);
+            UserClaims.UserIdOf(User)!.Value, req.Site, req.PostSlug, req.PostUrl, req.Body, req.ParentCommentId, ct);
 
         if (!result.IsOk)
         {

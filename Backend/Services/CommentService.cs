@@ -36,22 +36,26 @@ public sealed class CommentService(AppDbContext db)
     }
 
     public async Task<Result<CommentResponse>> CreateAsync(
-        Guid userId, string siteSlug, string postSlug, string body, Guid? parentCommentId, CancellationToken ct)
+        Guid userId, string siteSlug, string postSlug, string? postUrl, string body, Guid? parentCommentId, CancellationToken ct)
     {
-        var siteId = await db.Sites
+        var site = await db.Sites
             .Where(s => s.Slug == siteSlug)
-            .Select(s => s.SiteId)
             .FirstOrDefaultAsync(ct);
 
-        if (siteId == Guid.Empty)
+        if (site is null)
             return Result<CommentResponse>.Invalid("site", "No such site.");
+
+        var normalizedPostUrl = NormalizePostUrl(postUrl, site);
+
+        if (!normalizedPostUrl.IsOk)
+            return Result<CommentResponse>.Invalid("postUrl", normalizedPostUrl.Message!);
 
         if (parentCommentId is { } parentId)
         {
             // A reply has to hang off a real comment on the same post of the same
             // site, or the thread the blog renders makes no sense.
             var parentExists = await db.Comments.AnyAsync(
-                c => c.CommentId == parentId && c.SiteId == siteId && c.PostSlug == postSlug, ct);
+                c => c.CommentId == parentId && c.SiteId == site.SiteId && c.PostSlug == postSlug, ct);
 
             if (!parentExists)
                 return Result<CommentResponse>.Invalid(nameof(Comment.ParentCommentId), "No such comment on this post.");
@@ -59,8 +63,9 @@ public sealed class CommentService(AppDbContext db)
 
         var comment = new Comment
         {
-            SiteId = siteId,
+            SiteId = site.SiteId,
             PostSlug = postSlug,
+            PostUrl = normalizedPostUrl.Value,
             Body = body,
             ParentCommentId = parentCommentId,
             UserId = userId,
@@ -110,5 +115,26 @@ public sealed class CommentService(AppDbContext db)
         await db.SaveChangesAsync(ct);
 
         return Result.Ok();
+    }
+
+    private static Result<string?> NormalizePostUrl(string? postUrl, Site site)
+    {
+        if (string.IsNullOrWhiteSpace(postUrl))
+            return Result<string?>.Ok(null);
+
+        var trimmed = postUrl.Trim();
+
+        if (trimmed.Length > 2000)
+            return Result<string?>.Invalid(nameof(Comment.PostUrl), "Post URL must be 2000 characters or fewer.");
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+            return Result<string?>.Invalid(nameof(Comment.PostUrl), "Post URL must be absolute.");
+
+        var origin = uri.GetLeftPart(UriPartial.Authority);
+
+        if (!site.OriginList().Contains(origin, StringComparer.OrdinalIgnoreCase))
+            return Result<string?>.Invalid(nameof(Comment.PostUrl), "Post URL must use one of the site's origins.");
+
+        return Result<string?>.Ok(uri.ToString());
     }
 }

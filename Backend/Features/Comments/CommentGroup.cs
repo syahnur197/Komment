@@ -17,6 +17,7 @@ public sealed class CommentGroup : Group
 public sealed record CommentResponse(
     Guid CommentId,
     string PostSlug,
+    string? PostUrl,
     string Body,
     Guid? ParentCommentId,
     Guid UserId,
@@ -26,5 +27,5 @@ public sealed record CommentResponse(
     DateTime UpdatedAt)
 {
     public static CommentResponse From(Comment c) =>
-        new(c.CommentId, c.PostSlug, c.Body, c.ParentCommentId, c.UserId, c.User.Name, c.User.AvatarUrl, c.CreatedAt, c.UpdatedAt);
+        new(c.CommentId, c.PostSlug, c.PostUrl, c.Body, c.ParentCommentId, c.UserId, c.User.Name, c.User.AvatarUrl, c.CreatedAt, c.UpdatedAt);
 }

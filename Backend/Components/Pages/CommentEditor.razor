@@ -121,7 +121,7 @@
         error = null;
 
         var result = Reply
-            ? await _commentService.CreateAsync(userId, siteSlug!, target!.PostSlug, input!.Body, Id, default)
+            ? await _commentService.CreateAsync(userId, siteSlug!, target!.PostSlug, null, input!.Body, Id, default)
             : await _commentService.UpdateAsync(Id, userId, input!.Body, default);
 
         busy = false;
