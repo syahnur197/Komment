@@ -1,9 +1,7 @@
-using Backend.Data;
-using Backend.Entities;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
+using FluentValidation.Results;
 
 namespace Backend.Features.Auth;
 
@@ -29,14 +27,11 @@ public sealed class RegisterValidator : Validator<RegisterRequest>
     }
 }
 
-// Creates a site admin. Whether this is open to anyone depends on the mode:
-//   MULTI_TENANCY=true  — SaaS: anyone may sign up and register their own sites.
-//   MULTI_TENANCY=false — self-hosted: the first registration takes the box and
-//                         every one after it is refused.
+// Creates a site admin. Whether this is open to anyone is AccountService's call
+// (MULTI_TENANCY); this only turns the answer into a status code.
 public sealed class RegisterEndpoint : Endpoint<RegisterRequest>
 {
-    public AppDbContext Db { get; set; } = default!;
-    public IConfiguration Cfg { get; set; } = default!;
+    public AccountService Accounts { get; set; } = default!;
 
     public override void Configure()
     {
@@ -46,34 +41,20 @@ public sealed class RegisterEndpoint : Endpoint<RegisterRequest>
 
     public override async Task HandleAsync(RegisterRequest req, CancellationToken ct)
     {
-        var multiTenant = Cfg.GetValue("MULTI_TENANCY", false);
+        var result = await Accounts.RegisterAsync(req.Username, req.Email, req.Name, req.Password, ct);
 
-        if (!multiTenant && await Db.Users.AnyAsync(u => u.IsSiteAdmin, ct))
+        switch (result.Kind)
         {
-            await Send.ResultAsync(Results.Problem(
-                "This instance is single-tenant and already has an admin.", statusCode: 403));
-            return;
+            case ResultKind.Forbidden:
+                await Send.ResultAsync(Results.Problem(
+                    "This instance is single-tenant and already has an admin.", statusCode: 403));
+                return;
+
+            case ResultKind.Invalid:
+                ValidationFailures.Add(new ValidationFailure(result.Field!, result.Message!));
+                await Send.ErrorsAsync(cancellation: ct);
+                return;
         }
-
-        if (await Db.Users.AnyAsync(u => u.Username == req.Username, ct))
-        {
-            AddError(r => r.Username, "That username is taken.");
-            await Send.ErrorsAsync(cancellation: ct);
-            return;
-        }
-
-        var user = new User
-        {
-            Username = req.Username,
-            Email = req.Email,
-            Name = req.Name,
-            IsSiteAdmin = true,
-        };
-
-        user.PasswordHash = new PasswordHasher<User>().HashPassword(user, req.Password);
-
-        Db.Users.Add(user);
-        await Db.SaveChangesAsync(ct);
 
         await Send.NoContentAsync(ct);
     }

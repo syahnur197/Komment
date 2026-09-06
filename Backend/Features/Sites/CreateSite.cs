@@ -1,9 +1,8 @@
-using Backend.Data;
-using Backend.Entities;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
+using FluentValidation.Results;
 
 namespace Backend.Features.Sites;
 
@@ -41,7 +40,7 @@ public sealed class CreateSiteValidator : Validator<CreateSiteRequest>
 
 public sealed class CreateSiteEndpoint : Endpoint<CreateSiteRequest, SiteResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public SiteService Sites { get; set; } = default!;
 
     public override void Configure()
     {
@@ -51,25 +50,18 @@ public sealed class CreateSiteEndpoint : Endpoint<CreateSiteRequest, SiteRespons
 
     public override async Task HandleAsync(CreateSiteRequest req, CancellationToken ct)
     {
-        if (await Db.Sites.AnyAsync(s => s.Slug == req.Slug, ct))
+        var result = await Sites.CreateAsync(
+            UserClaims.UserIdOf(User)!.Value, req.Slug, req.Name, req.Origins, ct);
+
+        if (!result.IsOk)
         {
-            AddError(r => r.Slug, "That slug is taken.");
+            ValidationFailures.Add(new ValidationFailure(result.Field!, result.Message!));
             await Send.ErrorsAsync(cancellation: ct);
             return;
         }
 
-        var site = new Site
-        {
-            Slug = req.Slug,
-            Name = req.Name,
-            Origins = req.Origins,
-            OwnerUserId = UserClaims.UserIdOf(User)!.Value,
-        };
-
-        Db.Sites.Add(site);
-        await Db.SaveChangesAsync(ct);
-
+        // Location header points at the endpoint type, not a route name string.
         await Send.CreatedAtAsync<GetSiteByIdEndpoint>(
-            new { Id = site.SiteId }, SiteResponse.From(site), cancellation: ct);
+            new { Id = result.Value!.SiteId }, result.Value, cancellation: ct);
     }
 }

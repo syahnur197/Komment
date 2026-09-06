@@ -1,9 +1,6 @@
-using Backend.Data;
-using Backend.Entities;
+using Backend.Services;
 using FastEndpoints;
 using FluentValidation;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Backend.Features.Auth;
@@ -35,10 +32,10 @@ public sealed record IssueTokenResponse(
     bool IsSiteAdmin);
 
 // The admin sign-in. Readers use Google and get a cookie; this hands back a
-// bearer token for the Dashboard (or any other API client) to carry.
+// bearer token for any API client to carry.
 public sealed class IssueTokenEndpoint : Endpoint<IssueTokenRequest, IssueTokenResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public AccountService Accounts { get; set; } = default!;
     public SymmetricSecurityKey SigningKey { get; set; } = default!;
 
     public override void Configure()
@@ -49,23 +46,19 @@ public sealed class IssueTokenEndpoint : Endpoint<IssueTokenRequest, IssueTokenR
 
     public override async Task HandleAsync(IssueTokenRequest req, CancellationToken ct)
     {
-        var user = await Db.Users.FirstOrDefaultAsync(u => u.Username == req.Username, ct);
+        var user = await Accounts.VerifyPasswordAsync(req.Username, req.Password, ct);
 
         // One message for "no such user" and "wrong password" — the difference
         // is a free account-enumeration oracle.
-        var verified = user?.PasswordHash is not null &&
-                       new PasswordHasher<User>().VerifyHashedPassword(user, user.PasswordHash, req.Password)
-                           is not PasswordVerificationResult.Failed;
-
-        if (!verified)
+        if (user is null)
         {
             await Send.ResultAsync(Results.Problem("Invalid username or password.", statusCode: 401));
             return;
         }
 
-        var (token, expiresAt) = Tokens.Create(user!, SigningKey);
+        var (token, expiresAt) = Tokens.Create(user, SigningKey);
 
         await Send.OkAsync(new IssueTokenResponse(
-            token, expiresAt, user!.UserId, user.Email, user.Name, user.IsSiteAdmin), ct);
+            token, expiresAt, user.UserId, user.Email, user.Name, user.IsSiteAdmin), ct);
     }
 }

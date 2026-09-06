@@ -1,6 +1,5 @@
-using Backend.Data;
+using Backend.Services;
 using FastEndpoints;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Comments;
 
@@ -11,7 +10,7 @@ public sealed class GetCommentByIdRequest
 
 public sealed class GetCommentByIdEndpoint : Endpoint<GetCommentByIdRequest, CommentResponse>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public CommentService Comments { get; set; } = default!;
 
     public override void Configure()
     {
@@ -22,17 +21,14 @@ public sealed class GetCommentByIdEndpoint : Endpoint<GetCommentByIdRequest, Com
 
     public override async Task HandleAsync(GetCommentByIdRequest req, CancellationToken ct)
     {
-        var comment = await Db.Comments
-            .AsNoTracking()
-            .Include(c => c.User)
-            .FirstOrDefaultAsync(c => c.CommentId == req.Id, ct);
+        var result = await Comments.GetAsync(req.Id, ct);
 
-        if (comment is null)
+        if (!result.IsOk)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
-        await Send.OkAsync(CommentResponse.From(comment), ct);
+        await Send.OkAsync(result.Value!, ct);
     }
 }

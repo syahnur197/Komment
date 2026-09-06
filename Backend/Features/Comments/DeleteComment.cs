@@ -1,7 +1,6 @@
-using Backend.Data;
 using Backend.Features.Auth;
+using Backend.Services;
 using FastEndpoints;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Comments;
 
@@ -13,7 +12,7 @@ public sealed class DeleteCommentRequest
 // Endpoint<TRequest> — a request, no response body.
 public sealed class DeleteCommentEndpoint : Endpoint<DeleteCommentRequest>
 {
-    public AppDbContext Db { get; set; } = default!;
+    public CommentService Comments { get; set; } = default!;
 
     public override void Configure()
     {
@@ -23,30 +22,19 @@ public sealed class DeleteCommentEndpoint : Endpoint<DeleteCommentRequest>
 
     public override async Task HandleAsync(DeleteCommentRequest req, CancellationToken ct)
     {
-        var comment = await Db.Comments.FirstOrDefaultAsync(c => c.CommentId == req.Id, ct);
+        var result = await Comments.DeleteAsync(
+            req.Id, UserClaims.UserIdOf(User)!.Value, UserClaims.IsSiteAdmin(User), ct);
 
-        if (comment is null)
+        switch (result.Kind)
         {
-            await Send.NotFoundAsync(ct);
-            return;
+            case ResultKind.NotFound:
+                await Send.NotFoundAsync(ct);
+                return;
+
+            case ResultKind.Forbidden:
+                await Send.ForbiddenAsync(ct);
+                return;
         }
-
-        var userId = UserClaims.UserIdOf(User);
-
-        // The author, or the admin of the site the comment sits on — that is
-        // what moderation is.
-        var canDelete = comment.UserId == userId ||
-                        (UserClaims.IsSiteAdmin(User) &&
-                         await Db.Sites.AnyAsync(s => s.SiteId == comment.SiteId && s.OwnerUserId == userId, ct));
-
-        if (!canDelete)
-        {
-            await Send.ForbiddenAsync(ct);
-            return;
-        }
-
-        Db.Comments.Remove(comment);
-        await Db.SaveChangesAsync(ct);
 
         await Send.NoContentAsync(ct);
     }

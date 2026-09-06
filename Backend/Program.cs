@@ -3,6 +3,7 @@ using Backend.Features.Sites;
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Backend.Features.Auth;
+using Backend.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -41,6 +42,12 @@ builder.Services.SwaggerDocument();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("comments")));
+
+// The rules live here, not in the endpoints. Endpoints bind a request and turn a
+// Result into a status code; what is allowed is decided once, in a service.
+builder.Services.AddScoped<SiteService>();
+builder.Services.AddScoped<CommentService>();
+builder.Services.AddScoped<AccountService>();
 
 // Every browser client is on another origin: blogs are static sites, and the
 // Dashboard is a browser app talking to this API directly. Blogs come from the
