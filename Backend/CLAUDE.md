@@ -29,8 +29,16 @@ dotnet ef migrations add <Name>             # after any entity/DbContext change
 dotnet ef database update                   # or just start the app — it migrates on boot
 ```
 
-Swagger UI is at `/swagger` in Development only, and documents `/api/*` — the
-console is not an API and does not appear there. There is no test project yet.
+Swagger UI is at `/swagger` in **every** environment, and documents `/api/*` —
+the console is not an API and does not appear there, which
+`ExcludeNonFastEndpoints` enforces (NSwag would otherwise pick up the console's
+`POST /logout`). Outside Development the UI is reference-only: `uiConfig` sets
+swagger-ui's `supportedSubmitMethods` to `[]`, which is what actually removes Try
+It Out — `EnableTryItOut = false` alone would merely collapse it. Ergonomics, not
+a control: the spec is public and the endpoints are as reachable as ever.
+`EnableJWTBearerAuth` is off on purpose too: auth here is the reader cookie, and
+advertising a bearer scheme sends integrators down a dead end. There is no test
+project yet.
 
 ## Architecture
 

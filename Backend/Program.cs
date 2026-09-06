@@ -39,7 +39,29 @@ var builder = WebApplication.CreateBuilder(args);
 // Scans the assembly at startup for every Endpoint/Validator class and registers
 // them. There is no route table to maintain — the endpoint classes are the routes.
 builder.Services.AddFastEndpoints();
-builder.Services.SwaggerDocument();
+
+// The OpenAPI document, served at /swagger in Development. It describes the API
+// blogs integrate against, so it must describe only that.
+builder.Services.SwaggerDocument(documentOptions =>
+{
+    // Off by default this is on, and it is wrong here: nothing in this app takes
+    // a bearer token. Auth is the reader cookie, which a browser sends on its own
+    // and Swagger UI cannot obtain anyway — the 401s on each operation are the
+    // honest signal. Better no scheme than one that sends integrators down a
+    // dead end.
+    documentOptions.EnableJWTBearerAuth = false;
+
+    // Otherwise NSwag also picks up the console's own POST /logout minimal
+    // endpoint, which is not part of the API.
+    documentOptions.ExcludeNonFastEndpoints = true;
+
+    documentOptions.DocumentSettings = settings =>
+    {
+        settings.Title = "Komment";
+        settings.Description = "Comment backend for static blogs.";
+        settings.Version = "v1";
+    };
+});
 
 // The admin console. Interactive server rendering: the components run in this
 // process, so they call the services below directly — no HTTP, no serialisation,
@@ -208,7 +230,21 @@ app.UseAntiforgery();
 
 app.UseFastEndpoints();
 
-if (isDevelopment) app.UseSwaggerGen();
+// Served everywhere, not just Development: a self-hostable backend is only
+// useful to a blog that can see what it exposes. Outside Development the UI is
+// reference documentation — Try It Out is gone, so nobody fires a write at a
+// live database by idly clicking Execute on a public page.
+// Ergonomics, not a control: the spec is public and every endpoint is still
+// reachable with curl. Auth and the rate limiter are what guard them.
+app.UseSwaggerGen(uiConfig: uiSettings =>
+{
+    if (isDevelopment) return;
+
+    uiSettings.EnableTryItOut = false;
+    // The one that actually removes the button: swagger-ui hides Try It Out when
+    // no verb may be submitted. EnableTryItOut alone only collapses it.
+    uiSettings.AdditionalSettings["supportedSubmitMethods"] = Array.Empty<string>();
+});
 
 app.MapPost("/logout", async (HttpContext httpContext) =>
 {
