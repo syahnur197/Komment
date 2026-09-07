@@ -68,8 +68,8 @@ served from this origin.
 
 **The service layer owns every authorization rule.** `SiteService`,
 `CommentService` and `AccountService` decide reader-vs-admin, per-owner site
-scoping, author-only edits, author-or-owner deletes and the `MULTI_TENANCY`
-gate. Endpoints and components both go through them and neither touches
+scoping, author-only edits, author-or-owner deletes and the one-admin
+registration gate. Endpoints and components both go through them and neither touches
 `AppDbContext`. This used to be enforced by the HTTP boundary between two apps;
 in one project it is a convention, so it matters more, not less.
 

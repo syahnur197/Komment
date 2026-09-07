@@ -8,15 +8,15 @@ namespace Backend.Services;
 // Accounts, both kinds. Readers arrive through Google and are upserted on the
 // way back from the OAuth callback; site admins register with a username and
 // password. One Users table, one set of claims (UserClaims.For).
-public sealed class AccountService(AppDbContext db, IConfiguration cfg)
+public sealed class AccountService(AppDbContext db)
 {
     public async Task<Result<User>> RegisterAsync(
         string username, string email, string name, string password, CancellationToken ct)
     {
-        //   MULTI_TENANCY=true  — SaaS: anyone may sign up and register their sites.
-        //   MULTI_TENANCY=false — self-hosted: the first registration takes the box
-        //                         and every one after it is refused.
-        if (!cfg.GetValue("MULTI_TENANCY", false) && await db.Users.AnyAsync(u => u.IsSiteAdmin, ct))
+        // One admin per installation: the first registration takes the box and
+        // every one after it is refused. Self-hosting is the whole product, so
+        // there is no second tenant to make this configurable for.
+        if (await db.Users.AnyAsync(u => u.IsSiteAdmin, ct))
             return Result<User>.Forbidden();
 
         if (await db.Users.AnyAsync(u => u.Username == username, ct))

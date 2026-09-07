@@ -27,8 +27,8 @@ public sealed class RegisterValidator : Validator<RegisterRequest>
     }
 }
 
-// Creates a site admin. Whether this is open to anyone is AccountService's call
-// (MULTI_TENANCY); this only turns the answer into a status code.
+// Creates the site admin — there is only ever one. AccountService decides
+// whether the box is still up for grabs; this turns the answer into a status code.
 public sealed class RegisterEndpoint(AccountService accountService) : Endpoint<RegisterRequest>
 {
     private readonly AccountService _accountService = accountService;
@@ -47,7 +47,7 @@ public sealed class RegisterEndpoint(AccountService accountService) : Endpoint<R
         {
             case ResultKind.Forbidden:
                 await Send.ResultAsync(Results.Problem(
-                    "This instance is single-tenant and already has an admin.", statusCode: 403));
+                    "This instance already has an administrator.", statusCode: 403));
                 return;
 
             case ResultKind.Invalid:

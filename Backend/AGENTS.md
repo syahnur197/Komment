@@ -37,8 +37,8 @@ console is not an API and does not appear there. There is no test project yet.
 
 **`Services/` owns every rule; `Features/` and `Components/` only phrase them.**
 `SiteService`, `CommentService` and `AccountService` decide what is allowed:
-owner-scoping, author-only edits, author-or-owner deletes, the `MULTI_TENANCY`
-gate, and comment field rules that require database context. They answer with a
+owner-scoping, author-only edits, author-or-owner deletes, the one-admin
+registration gate, and comment field rules that require database context. They answer with a
 `Result` carrying `Ok`/`NotFound`/`Forbidden`/`Invalid`. An endpoint turns that
 into a status code; a component turns it into a message. Nothing outside
 `Services/` and `Data/` touches `AppDbContext`, except `SiteOrigins`, which is
@@ -83,8 +83,8 @@ row in that table, and needs none: it is served from this same origin.
 (`GoogleId` set). Site admins register with username/password (`IsSiteAdmin`,
 PBKDF2 via `PasswordHasher<User>`). Both paths build claims through
 `UserClaims.For`/`UserClaims.UserId` so endpoints read the user id off the
-principal and never re-look-up. `MULTI_TENANCY` decides whether registration
-stays open or closes after the first admin.
+principal and never re-look-up. Registration closes for good once one admin
+exists — an installation has exactly one.
 
 **Two cookies, chosen by path.** `AuthSchemes.Reader` (`comments.session`,
 `SameSite=None; Secure`) is the blog reader's cookie because the blog is on
