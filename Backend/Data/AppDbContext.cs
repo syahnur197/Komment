@@ -3,7 +3,7 @@ namespace Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Entities;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     private void Timestamp()
     {

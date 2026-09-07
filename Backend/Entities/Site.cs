@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Backend.Entities;
 
 // A tenant: one blog. Everything else hangs off this.
-public class Site : ITimestamped
+public sealed class Site : ITimestamped
 {
     public Guid SiteId { get; set; }
 

@@ -5,7 +5,7 @@ namespace Backend.Entities;
 // Two kinds of account share this table: readers who signed in with Google
 // (GoogleId set, no password) and site admins who registered with a username
 // and password. Nothing stops one person being both — they are separate rows.
-public class User : ITimestamped
+public sealed class User : ITimestamped
 {
     public Guid UserId { get; set; }
 

@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Backend.Entities;
 
-public class Comment : ITimestamped
+public sealed class Comment : ITimestamped
 {
     public Guid CommentId { get; set; }
 
