@@ -19,7 +19,7 @@ public sealed class Comment : ITimestamped
     [MaxLength(4000)]
     public required string Body { get; set; }
 
-    // Self-reference: a reply is just a comment with a parent. Null = top level.
+    // Null = top level.
     public Guid? ParentCommentId { get; set; }
     public Comment? Parent { get; set; }
     public ICollection<Comment> Replies { get; set; } = [];

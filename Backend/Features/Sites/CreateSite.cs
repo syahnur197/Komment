@@ -60,7 +60,6 @@ public sealed class CreateSiteEndpoint(SiteService siteService) : Endpoint<Creat
             return;
         }
 
-        // Location header points at the endpoint type, not a route name string.
         await Send.CreatedAtAsync<GetSiteByIdEndpoint>(
             new { Id = result.Value!.SiteId }, result.Value, cancellation: ct);
     }

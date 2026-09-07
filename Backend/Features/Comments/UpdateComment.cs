@@ -5,8 +5,7 @@ using FluentValidation;
 
 namespace Backend.Features.Comments;
 
-// One DTO fed from two sources: Id comes from the route token, the rest from
-// the JSON body. FastEndpoints binds both into the same object.
+// One DTO fed from two sources: Id from the route token, the rest from the body.
 public sealed class UpdateCommentRequest
 {
     public Guid Id { get; set; }

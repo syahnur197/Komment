@@ -36,12 +36,9 @@ foreach (var line in envFile is null ? [] : File.ReadAllLines(envFile))
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Scans the assembly at startup for every Endpoint/Validator class and registers
-// them. There is no route table to maintain — the endpoint classes are the routes.
 builder.Services.AddFastEndpoints();
 
-// The OpenAPI document, served at /swagger in Development. It describes the API
-// blogs integrate against, so it must describe only that.
+// It describes the API blogs integrate against, so it must describe only that.
 builder.Services.SwaggerDocument(documentOptions =>
 {
     // Off by default this is on, and it is wrong here: nothing in this app takes

@@ -3,8 +3,6 @@ using FastEndpoints;
 
 namespace Backend.Features.Comments;
 
-// The group is the shared prefix + shared configuration, like MapGroup() or
-// [Route("api/[controller]")]. Endpoints opt in with Group<CommentGroup>().
 // Reads are opened up per-endpoint; writes stay behind the cookie.
 public sealed class CommentGroup : Group
 {

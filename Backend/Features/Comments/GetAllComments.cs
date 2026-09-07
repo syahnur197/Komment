@@ -18,8 +18,6 @@ public sealed class GetAllCommentsValidator : Validator<GetAllCommentsRequest>
     public GetAllCommentsValidator() => RuleFor(x => x.Site).NotEmpty();
 }
 
-// One class per endpoint (the REPR pattern: Request-Endpoint-Response). The
-// endpoint binds and maps; CommentService decides.
 public sealed class GetAllCommentsEndpoint(CommentService commentService) : Endpoint<GetAllCommentsRequest, List<CommentResponse>>
 {
     private readonly CommentService _commentService = commentService;

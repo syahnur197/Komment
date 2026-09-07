@@ -9,7 +9,6 @@ public sealed class DeleteCommentRequest
     public Guid Id { get; set; }
 }
 
-// Endpoint<TRequest> — a request, no response body.
 public sealed class DeleteCommentEndpoint(CommentService commentService) : Endpoint<DeleteCommentRequest>
 {
     private readonly CommentService _commentService = commentService;

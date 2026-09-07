@@ -17,9 +17,7 @@ public sealed class CreateCommentRequest
     public Guid? ParentCommentId { get; set; }
 }
 
-// FluentValidation is built in. FastEndpoints discovers this by its request type
-// and runs it before HandleAsync — a failure short-circuits with a 400. Shape
-// only; whether the site or parent exists is CommentService's to answer.
+// Shape only; whether the site or parent exists is CommentService's to answer.
 public sealed class CreateCommentValidator : Validator<CreateCommentRequest>
 {
     public CreateCommentValidator()
@@ -53,7 +51,6 @@ public sealed class CreateCommentEndpoint(CommentService commentService) : Endpo
             return;
         }
 
-        // Location header points at the endpoint type, not a route name string.
         await Send.CreatedAtAsync<GetCommentByIdEndpoint>(
             new { Id = result.Value!.CommentId }, result.Value, cancellation: ct);
     }

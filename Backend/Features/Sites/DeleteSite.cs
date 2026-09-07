@@ -9,7 +9,6 @@ public sealed class DeleteSiteRequest
     public Guid Id { get; set; }
 }
 
-// Takes every comment on that site with it (required FK, so EF cascades).
 public sealed class DeleteSiteEndpoint(SiteService siteService) : Endpoint<DeleteSiteRequest>
 {
     private readonly SiteService _siteService = siteService;
