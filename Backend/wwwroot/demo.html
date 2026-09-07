@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo post</title>
+<link rel="icon" href="favicon.png">
+<style>
+    body { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1.5rem 6rem;
+           font: 16px/1.65 Georgia, 'Times New Roman', serif; color: #1e293b; background: #fff; }
+    h1 { font-size: 1.875rem; line-height: 1.25; margin: 0 0 .25rem; }
+    .byline { font-size: .8125rem; letter-spacing: .04em; text-transform: uppercase; color: #64748b; margin: 0 0 2rem; }
+    hr { border: 0; border-top: 1px solid #e2e8f0; margin: 3rem 0 2rem; }
+    #komment { font-family: system-ui, sans-serif; font-size: 15px; }
+</style>
+
+<!-- Deliberately not a Blazor page, and not styled by the console's Tailwind:
+     the widget has to look right on a page this app does not control, which is
+     exactly what a static blog is. Plain HTML is the honest test. -->
+
+<h1>A post that isn't real</h1>
+<p class="byline">Demo &middot; Komment</p>
+
+<p>This page exists so the comment widget can be seen where it actually runs — in
+   an ordinary HTML document, inheriting that document's typography rather than
+   the admin console's.</p>
+<p>The thread below is live. Anything posted here is a real comment on the site
+   picked in the console, filed under the post slug in the address bar.</p>
+
+<hr>
+
+<div id="komment"></div>
+
+<script>
+    // The console drives this page through the query string; a real blog hard-codes
+    // data-site on the tag instead. Appending the tag rather than writing it inline
+    // is the only difference — document.currentScript still resolves for a classic
+    // script inserted this way.
+    var params = new URLSearchParams(location.search);
+    var embed = document.createElement('script');
+
+    embed.src = '/embed.js';
+    embed.dataset.site = params.get('site') || '';
+    embed.dataset.slug = params.get('slug') || '/demo/a-post-that-isnt-real';
+
+    document.body.append(embed);
+</script>
