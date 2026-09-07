@@ -54,16 +54,6 @@
                 }
             </div>
 
-            <div>
-                <label for="origins" class="block text-sm font-medium text-slate-700">Origins</label>
-                <InputTextArea id="origins" @bind-Value="input.Origins" rows="3"
-                               class="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 font-mono text-sm shadow-sm focus:border-sky-600 focus:ring-2 focus:ring-sky-600/20 focus:outline-none" />
-                <ValidationMessage For="() => input.Origins" class="mt-1 block text-sm text-red-600" />
-                <p class="mt-1 text-sm text-slate-500">
-                    One per line. Scheme, host and port only — no trailing slash. This is the CORS allowlist.
-                </p>
-            </div>
-
             <div class="flex items-center gap-3">
                 <button type="submit" disabled="@busy" class="rounded bg-sky-700 px-4 py-2 font-medium text-white hover:bg-sky-800 disabled:opacity-60">
                     @(IsNew ? "Add site" : "Save changes")
@@ -94,8 +84,6 @@
         [StringLength(100)]
         [RegularExpression("^[a-z0-9-]+$", ErrorMessage = "Lowercase letters, digits and dashes only.")]
         public string Slug { get; set; } = "";
-
-        [Required, StringLength(1000)] public string Origins { get; set; } = "";
     }
 
     protected override async Task OnInitializedAsync()
@@ -116,13 +104,10 @@
             return;
         }
 
-        // The textarea is one origin per line; the service stores them
-        // comma-separated and hands them back as an array.
         input = new()
         {
             Name = result.Value!.Name,
             Slug = result.Value.Slug,
-            Origins = string.Join('\n', result.Value.Origins),
         };
     }
 
@@ -131,12 +116,9 @@
         busy = true;
         error = null;
 
-        var origins = string.Join(',', input!.Origins
-            .Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-
         var result = IsNew
-            ? await _siteService.CreateAsync(ownerId, input.Slug, input.Name, origins, default)
-            : await _siteService.UpdateAsync(Id!.Value, ownerId, input.Name, origins, default);
+            ? await _siteService.CreateAsync(ownerId, input!.Slug, input.Name, default)
+            : await _siteService.UpdateAsync(Id!.Value, ownerId, input!.Name, default);
 
         busy = false;
 

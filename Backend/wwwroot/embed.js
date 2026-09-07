@@ -150,8 +150,7 @@
         if (!me) {
             var prompt = el('p', 'km-signin');
             var link = el('a', 'km-button', 'Sign in with Google to comment');
-            link.href = api + '/api/auth/login?site=' + encodeURIComponent(site) +
-                        '&returnUrl=' + encodeURIComponent(location.href);
+            link.href = api + '/api/auth/login?returnUrl=' + encodeURIComponent(location.href);
             prompt.append(link);
             return prompt;
         }

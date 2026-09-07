@@ -8,17 +8,16 @@ namespace Backend.Features.Auth;
 
 public sealed class CallbackRequest
 {
-    public string? Site { get; set; }
     public string? ReturnUrl { get; set; }
 }
 
 // Google has already signed the cookie in by the time we get here. This is where
 // the account becomes a row: upsert the user, then re-issue the cookie carrying
 // our own user id so no endpoint has to look the user up again.
-public sealed class CallbackEndpoint(AccountService accountService, SiteService siteService) : Endpoint<CallbackRequest>
+public sealed class CallbackEndpoint(AccountService accountService, AllowedOrigins allowedOrigins) : Endpoint<CallbackRequest>
 {
     private readonly AccountService _accountService = accountService;
-    private readonly SiteService _siteService = siteService;
+    private readonly AllowedOrigins _allowedOrigins = allowedOrigins;
 
     public override void Configure()
     {
@@ -48,8 +47,6 @@ public sealed class CallbackEndpoint(AccountService accountService, SiteService 
 
         await HttpContext.SignInAsync(Backend.Features.Auth.AuthSchemes.Reader, new ClaimsPrincipal(identity));
 
-        var site = await _siteService.FindBySlugAsync(req.Site, ct);
-
-        await Send.ResultAsync(Results.Redirect(SiteOrigins.SafeReturnUrl(req.ReturnUrl, site)));
+        await Send.ResultAsync(Results.Redirect(_allowedOrigins.SafeReturnUrl(req.ReturnUrl)));
     }
 }

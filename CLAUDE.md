@@ -61,10 +61,10 @@ plain HTTP under `docker compose up`. A path policy scheme in `Program.cs`
 forwards `/api/*` to the reader cookie and everything else to the admin cookie,
 so neither handler ever sees the other's. `AuthSchemes` names all three.
 
-**CORS is for blogs only.** `SiteOrigins.IsAllowed` reads the `Sites` table per
-preflight, so registering a blog is an "Add site" in the console (or a
-`POST /api/site`), not a redeploy. The console itself needs no entry — it is
-served from this origin.
+**CORS is for blogs only.** `AllowedOrigins` reads `ALLOWED_ORIGINS` from `.env`
+once at startup — one admin per installation, so the allowlist is configuration,
+not data. Adding a blog's origin is an edit plus a restart. The console itself
+needs no entry — it is served from this origin.
 
 **The service layer owns every authorization rule.** `SiteService`,
 `CommentService` and `AccountService` decide reader-vs-admin, per-owner site

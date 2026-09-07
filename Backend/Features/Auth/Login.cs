@@ -6,9 +6,6 @@ namespace Backend.Features.Auth;
 
 public sealed class LoginRequest
 {
-    // Which blog the reader is signing in from. Omit only when bootstrapping the
-    // first site — there is nowhere to redirect back to yet.
-    public string? Site { get; set; }
     public string? ReturnUrl { get; set; }
 }
 
@@ -34,8 +31,7 @@ public sealed class LoginEndpoint(IAuthenticationSchemeProvider authenticationSc
             return;
         }
 
-        var query = $"?site={Uri.EscapeDataString(req.Site ?? "")}" +
-                    $"&returnUrl={Uri.EscapeDataString(req.ReturnUrl ?? "")}";
+        var query = $"?returnUrl={Uri.EscapeDataString(req.ReturnUrl ?? "")}";
 
         await Send.ResultAsync(Results.Challenge(
             new AuthenticationProperties { RedirectUri = $"/api/auth/callback{query}" },

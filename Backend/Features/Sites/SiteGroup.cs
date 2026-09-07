@@ -26,10 +26,9 @@ public sealed record SiteResponse(
     Guid SiteId,
     string Slug,
     string Name,
-    string[] Origins,
     DateTime CreatedAt,
     DateTime UpdatedAt)
 {
     public static SiteResponse From(Site s) =>
-        new(s.SiteId, s.Slug, s.Name, s.OriginList(), s.CreatedAt, s.UpdatedAt);
+        new(s.SiteId, s.Slug, s.Name, s.CreatedAt, s.UpdatedAt);
 }

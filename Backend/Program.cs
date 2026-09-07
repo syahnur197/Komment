@@ -78,17 +78,17 @@ builder.Services.AddScoped<AccountService>();
 
 // Blogs are static sites on other origins, so the reader's session cookie is
 // cross-site: SameSite=None + Secure, and CORS must allow credentials. The
-// allowed origins are the registered sites, read per preflight — which needs a
-// service provider, so the policy is configured through the options pipeline
-// rather than inline: that hands us one instead of capturing it after Build().
+// allowed origins come from ALLOWED_ORIGINS, read once at startup — a static
+// list needs no service provider and no per-preflight query.
 // The console needs no CORS entry at all: it is served from this origin.
-builder.Services.AddCors();
-builder.Services.AddOptions<CorsOptions>().Configure<IServiceProvider>((corsOptions, services) =>
-    corsOptions.AddDefaultPolicy(policy => policy
-        .SetIsOriginAllowed(origin => SiteOrigins.IsAllowed(services, origin))
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials()));
+var allowedOrigins = new AllowedOrigins(builder.Configuration);
+builder.Services.AddSingleton(allowedOrigins);
+
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
+    .WithOrigins(allowedOrigins.All)
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .AllowCredentials()));
 
 // Missing credentials must not take the whole app down — reads and Swagger still
 // work, only the reader sign-in flow is unavailable (LoginEndpoint says so).

@@ -34,12 +34,12 @@ public sealed class SiteService(AppDbContext db)
     }
 
     public async Task<Result<SiteResponse>> CreateAsync(
-        Guid ownerId, string slug, string name, string origins, CancellationToken ct)
+        Guid ownerId, string slug, string name, CancellationToken ct)
     {
         if (await db.Sites.AnyAsync(s => s.Slug == slug, ct))
             return Result<SiteResponse>.Invalid(nameof(Site.Slug), "That slug is taken.");
 
-        var site = new Site { Slug = slug, Name = name, Origins = origins, OwnerUserId = ownerId };
+        var site = new Site { Slug = slug, Name = name, OwnerUserId = ownerId };
 
         db.Sites.Add(site);
         await db.SaveChangesAsync(ct);
@@ -49,24 +49,18 @@ public sealed class SiteService(AppDbContext db)
 
     // Slug is deliberately not updatable: blogs already embed it in their requests.
     public async Task<Result<SiteResponse>> UpdateAsync(
-        Guid siteId, Guid ownerId, string? name, string? origins, CancellationToken ct)
+        Guid siteId, Guid ownerId, string? name, CancellationToken ct)
     {
         var site = await db.Sites.FirstOrDefaultAsync(s => s.SiteId == siteId && s.OwnerUserId == ownerId, ct);
 
         if (site is null) return Result<SiteResponse>.NotFound();
 
         site.Name = name ?? site.Name;
-        site.Origins = origins ?? site.Origins;
 
         await db.SaveChangesAsync(ct);
 
         return Result<SiteResponse>.Ok(SiteResponse.From(site));
     }
-
-    // Not owner-scoped, and deliberately so: the OAuth callback needs a site's
-    // origins to bound its redirect, and the reader signing in does not own it.
-    public Task<Site?> FindBySlugAsync(string? slug, CancellationToken ct) =>
-        db.Sites.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == slug, ct);
 
     // Takes every comment on that site with it (required FK, so EF cascades).
     public async Task<Result> DeleteAsync(Guid siteId, Guid ownerId, CancellationToken ct)

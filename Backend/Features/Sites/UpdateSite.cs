@@ -10,7 +10,6 @@ public sealed class UpdateSiteRequest
 {
     public Guid Id { get; set; }
     public string? Name { get; set; }
-    public string? Origins { get; set; }
 }
 
 public sealed class UpdateSiteValidator : Validator<UpdateSiteRequest>
@@ -18,7 +17,6 @@ public sealed class UpdateSiteValidator : Validator<UpdateSiteRequest>
     public UpdateSiteValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200).When(x => x.Name is not null);
-        RuleFor(x => x.Origins).NotEmpty().MaximumLength(1000).When(x => x.Origins is not null);
     }
 }
 
@@ -35,7 +33,7 @@ public sealed class UpdateSiteEndpoint(SiteService siteService) : Endpoint<Updat
     public override async Task HandleAsync(UpdateSiteRequest req, CancellationToken ct)
     {
         var result = await _siteService.UpdateAsync(
-            req.Id, UserClaims.UserIdOf(User)!.Value, req.Name, req.Origins, ct);
+            req.Id, UserClaims.UserIdOf(User)!.Value, req.Name, ct);
 
         if (!result.IsOk)
         {

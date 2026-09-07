@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject SiteService _siteService
+@inject AllowedOrigins _allowedOrigins
 
 <PageTitle>Sites</PageTitle>
 
@@ -11,6 +12,18 @@
         Add site
     </a>
 </div>
+
+<p class="mt-2 text-sm text-slate-500">
+    Allowed origins are installation-wide and set with <code>ALLOWED_ORIGINS</code> in <code>.env</code>:
+    @if (_allowedOrigins.All.Length == 0)
+    {
+        <span class="text-amber-700">none configured — no blog can reach the API.</span>
+    }
+    else
+    {
+        <span class="font-mono">@string.Join(", ", _allowedOrigins.All)</span>
+    }
+</p>
 
 @if (error is not null)
 {
@@ -36,7 +49,6 @@ else
                 <tr>
                     <th class="px-4 py-3 font-medium">Name</th>
                     <th class="px-4 py-3 font-medium">Slug</th>
-                    <th class="px-4 py-3 font-medium">Origins</th>
                     <th class="px-4 py-3"><span class="sr-only">Actions</span></th>
                 </tr>
             </thead>
@@ -46,12 +58,6 @@ else
                     <tr class="border-b border-slate-100 last:border-0">
                         <td class="px-4 py-3 text-slate-900">@site.Name</td>
                         <td class="px-4 py-3"><code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-700">@site.Slug</code></td>
-                        <td class="px-4 py-3 text-slate-600">
-                            @foreach (var origin in site.Origins)
-                            {
-                                <div>@origin</div>
-                            }
-                        </td>
                         <td class="px-4 py-3 text-right whitespace-nowrap">
                             @* Two-step rather than a JS confirm(): interactivity makes
                                the safer version the simpler one, and keeps the project

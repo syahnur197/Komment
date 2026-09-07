@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject SiteService _siteService
+@inject AllowedOrigins _allowedOrigins
 @inject NavigationManager Nav
 
 <PageTitle>Demo</PageTitle>
@@ -59,9 +60,9 @@ else
             class="mt-6 h-[40rem] w-full rounded-lg border border-slate-200 bg-white"></iframe>
 
     <p class="mt-3 text-xs text-slate-500">
-        Signing in from here lands back on <strong>@(sites.First(s => s.Slug == slug).Origins.FirstOrDefault() ?? "the site's first origin")</strong>,
-        not this page — the OAuth callback only returns to an origin registered on the site.
-        Add <code>@Nav.BaseUri.TrimEnd('/')</code> to this site's origins to finish the round trip here.
+        Signing in from here lands back on <strong>@(_allowedOrigins.All.FirstOrDefault() ?? "/")</strong>,
+        not this page — the OAuth callback only returns to a configured origin.
+        Add <code>@Nav.BaseUri.TrimEnd('/')</code> to <code>ALLOWED_ORIGINS</code> to finish the round trip here.
     </p>
 }
 

@@ -41,8 +41,8 @@ owner-scoping, author-only edits, author-or-owner deletes, the one-admin
 registration gate, and comment field rules that require database context. They answer with a
 `Result` carrying `Ok`/`NotFound`/`Forbidden`/`Invalid`. An endpoint turns that
 into a status code; a component turns it into a message. Nothing outside
-`Services/` and `Data/` touches `AppDbContext`, except `SiteOrigins`, which is
-CORS infrastructure, not a request handler.
+`Services/` and `Data/` touches `AppDbContext` — no exceptions, now that the
+CORS allowlist comes from configuration.
 
 **FastEndpoints (REPR), not controllers.** One file per endpoint under
 `Features/<Area>/`, each holding its request DTO, its `Validator<TRequest>`, and
@@ -73,11 +73,12 @@ a leading underscore, so the call site says which service it is.
 members are private where Blazor allows it, such as `[CascadingParameter] private`
 and `[SupplyParameterFromQuery] private`.
 
-**Sites are tenants and also the CORS allowlist.** `SiteOrigins.IsAllowed` reads
-the `Sites` table per preflight, so registering a blog is `POST /api/site` rather
-than a redeploy. The same table backs `SafeReturnUrl`, which is the open-redirect
-guard on the OAuth callback. The admin console is the one origin that is not a
-row in that table, and needs none: it is served from this same origin.
+**The CORS allowlist is configuration, not data.** `AllowedOrigins` is a
+singleton built from `ALLOWED_ORIGINS` in `.env` and read once at startup; the
+same list backs `SafeReturnUrl`, the open-redirect guard on the OAuth callback.
+`Sites` rows still scope comments by slug, but carry no origins. Changing the
+allowlist is a restart — the trade for dropping a database query per preflight.
+The admin console needs no entry: it is served from this same origin.
 
 **Two account kinds, one `Users` table.** Readers sign in with Google
 (`GoogleId` set). Site admins register with username/password (`IsSiteAdmin`,
